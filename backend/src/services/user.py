@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timezone
 
 from fastapi import UploadFile
@@ -6,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from src.models.user import User
 from src.schemas.user import UserPartialUpdateRequest, UserProfileResponse, UserResponse
-from src.core.config import settings
+from src.utils.upload_image import upload_image
 
 def partial_update_user(
 	payload: UserPartialUpdateRequest,
@@ -35,15 +34,9 @@ def update_profile_picture(
     user: User,
     db: Session
 ) -> UserProfileResponse:
-
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
-    file_path = f"{settings.UPLOAD_DIR}/{user.id}_{file.filename}"
-
-    with open(file_path, "wb") as buffer:
-        buffer.write(file.file.read())
-
-    user.profile_pic_url = file_path
+    result = upload_image(file.file, folder="profile_pictures")
+    
+    user.profile_pic_url = result["url"]
 
     db.flush()
     db.refresh(user)

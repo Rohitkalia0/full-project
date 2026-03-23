@@ -1,5 +1,7 @@
 from fastapi import FastAPI
+import cloudinary
 
+from src.core.config import settings
 from src.database.database import engine
 from src.exceptions import register_exception_handlers
 from src.models.base import Base
@@ -13,9 +15,17 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 
 
-Base.metadata.create_all(
-	bind=engine
-)
+@app.on_event("startup")
+def startup():
+	Base.metadata.create_all(
+		bind=engine
+	)
+	cloudinary.config(
+		cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+		api_key=settings.CLOUDINARY_API_KEY,
+		api_secret=settings.CLOUDINARY_API_SECRET,
+		secure=True
+	)
 
 
 register_exception_handlers(app)
