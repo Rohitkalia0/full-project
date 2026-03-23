@@ -14,16 +14,22 @@ from src.schemas.skill import (
     SkillCreateRequest,
     SkillPartialUpdateRequest,
     SkillResponse,
+    SkillSortField,
     SkillsResponse,
     SkillUpdateRequest,
+    SortOrder,
 )
 
 
 def get_skills(
+	sort_by: SkillSortField,
+	order: SortOrder,
 	user: User,
 	db: Session
 ) -> SuccessResponse[SkillsResponse]:
 	skills_data = services.get_skills(
+		sort_by,
+		order,
 		user,
 		db
 	)

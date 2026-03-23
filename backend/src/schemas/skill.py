@@ -1,4 +1,5 @@
 from datetime import date
+from enum import Enum
 from typing import List, Union
 from uuid import UUID
 
@@ -106,3 +107,14 @@ class SkillPartialUpdateRequest(BaseSchema):
 class SkillsResponse(BaseModel):
 	total_skills: int
 	skills: Union[List[SkillResponse], None] = None
+
+
+
+class SkillSortField(str, Enum):
+	created_at = "created_at"
+	updated_at = "updated_at"
+	skill_name = "name"
+	
+class SortOrder(str, Enum):
+	asc = "asc"
+	desc = "desc"
