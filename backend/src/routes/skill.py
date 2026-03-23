@@ -1,6 +1,6 @@
 from http import HTTPStatus
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 import src.controllers.skill as controllers
@@ -20,19 +20,27 @@ from src.schemas.skill import (
     SkillCreateRequest,
     SkillPartialUpdateRequest,
     SkillResponse,
+    SkillSortField,
     SkillsResponse,
     SkillUpdateRequest,
+    SortOrder,
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"], dependencies=[Depends(get_user_or_404)])
 
 
+
+
 @router.get("", status_code=200, response_model=SuccessResponse[SkillsResponse])
 def get_skills(
+	sort_by: SkillSortField = Query(default=SkillSortField.created_at),
+	order: SortOrder = Query(default=SortOrder.desc),
 	user: User = Depends(get_user_or_404),
 	db: Session = Depends(get_db)
 ):
 	return controllers.get_skills(
+		sort_by,
+		order,
 		user,
 		db
 	)

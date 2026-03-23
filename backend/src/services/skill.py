@@ -2,6 +2,7 @@ from http import HTTPStatus
 from typing import List
 from uuid import UUID
 
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import select
 
@@ -19,16 +20,21 @@ from src.schemas.skill import (
     SkillCreateRequest,
     SkillPartialUpdateRequest,
     SkillResponse,
+    SkillSortField,
     SkillsResponse,
     SkillUpdateRequest,
+    SortOrder,
 )
 
 
 def get_skills(
+	sort_by: SkillSortField,
+	order: SortOrder,
 	user: User,
 	db: Session
 ) -> SkillsResponse:
-	stmt = select(Skill).where(Skill.user_id == user.id)
+	order_func = asc if order == SortOrder.asc else desc
+	stmt = select(Skill).where(Skill.user_id == user.id).order_by(order_func(sort_by))
 	skills_data = db.scalars(stmt).all()
 
 	result: List[SkillResponse] = []
