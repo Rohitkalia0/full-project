@@ -1,4 +1,4 @@
-const BASE_URL = "http://127.0.0.1:8000/api/v1";
+const BASE_URL = "https://full-project-9w4o.onrender.com/api/v1";
 
 const getToken = () => localStorage.getItem("access_token");
 
