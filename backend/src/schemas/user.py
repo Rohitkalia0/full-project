@@ -31,6 +31,6 @@ class UserPartialUpdateRequest(BaseSchema):
 	)
 	last_name: Union[str, None] = Field(
 		default=None,
-		min_length=True,
-		max_length=True
+		min_length=2,
+		max_length=20
 	)
