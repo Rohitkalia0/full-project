@@ -51,3 +51,13 @@ def update_profile_picture(
         user,
         db
     )
+
+
+@router.get("/me", status_code=HTTPStatus.OK, response_model=SuccessResponse[UserResponse])
+def get_user(
+	user: User = Depends(get_user_or_404),
+) -> SuccessResponse[UserResponse]:
+	return SuccessResponse[UserResponse](
+		message="User fetched successfully",
+		data=UserResponse.model_validate(user)
+	)
