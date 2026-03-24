@@ -66,7 +66,7 @@ def create_skill(
 	db: Session
 ) -> SkillResponse:
 
-	stmt = select(Skill).where(Skill.name == payload.name, Skill.user_id == user.id)
+	stmt = select(Skill).where(Skill.name.ilike(payload.name), Skill.user_id == user.id)
 	skill_data = db.scalar(stmt)
 	if skill_data is not None:
 		raise DomainException(
@@ -130,7 +130,7 @@ def update_skill_by_id(
 	skill: Skill,
 	db: Session
 ) -> SkillResponse:
-	stmt = select(Skill).where(Skill.name == payload.name, Skill.user_id == user.id, Skill.id != skill.id)
+	stmt = select(Skill).where(Skill.name.ilike(payload.name), Skill.user_id == user.id, Skill.id != skill.id)
 	skill_data = db.scalar(stmt)
 	if skill_data is not None:
 		raise DomainException(
@@ -159,7 +159,7 @@ def partial_update_skill_by_id(
 	db: Session
 ) -> SkillResponse:
 	if payload.name:
-		stmt = select(Skill).where(Skill.name == payload.name, Skill.user_id == user.id, Skill.id != skill.id)
+		stmt = select(Skill).where(Skill.name.ilike(payload.name), Skill.user_id == user.id, Skill.id != skill.id)
 		skill_data = db.scalar(stmt)
 		if skill_data is not None:
 			raise DomainException(
