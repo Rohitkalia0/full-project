@@ -8,7 +8,7 @@ from src.dependencies.database import get_db
 from src.dependencies.user import get_user_or_404
 from src.models.user import User
 from src.schemas.api_response import SuccessResponse
-from src.schemas.user import UserPartialUpdateRequest, UserProfileResponse, UserResponse
+from src.schemas.user import UserPartialUpdateRequest, UserResponse
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -39,7 +39,7 @@ def delete_user(
 @router.patch(
     "/profile-picture",
     status_code=HTTPStatus.OK,
-    response_model=SuccessResponse[UserProfileResponse]
+    response_model=SuccessResponse[UserResponse]
 )
 def update_profile_picture(
     file: UploadFile = File(...),
