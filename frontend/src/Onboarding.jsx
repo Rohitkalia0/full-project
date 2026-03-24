@@ -27,7 +27,6 @@ const DefaultAvatar = () => (
 function Onboarding() {
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     firstName: "", lastName: "",
     morningStart: "07:00", morningEnd: "09:00",
@@ -56,7 +55,6 @@ function Onboarding() {
   };
 
   const handleSubmit = async () => {
-    if (submitting) return;
     try {
       if (!form.firstName.trim() || form.firstName.trim().length < 2) {
         setToast({ message: "First name must be at least 2 characters", type: "error" }); return;
@@ -71,24 +69,11 @@ function Onboarding() {
         setToast({ message: "Morning and evening windows must not overlap", type: "error" }); return;
       }
 
-      setSubmitting(true);
-
       const userPayload = { first_name: form.firstName.trim() };
       if (form.lastName.trim()) userPayload.last_name = form.lastName.trim();
-
       await updateUserAPI(userPayload);
-      localStorage.setItem("first_name", form.firstName.trim());
-      if (form.lastName.trim()) localStorage.setItem("last_name", form.lastName.trim());
 
-      if (photoFile) {
-        // Get the URL from backend response
-        const photoRes = await uploadPhotoAPI(photoFile);
-        const photoData = photoRes?.data ?? photoRes;
-        const backendUrl = photoData?.profile_pic_url ?? null;
-        if (backendUrl) {
-          localStorage.setItem("photo_url", backendUrl);
-        }
-      }
+      if (photoFile) await uploadPhotoAPI(photoFile);
 
       await createSettingAPI({
         morning_start_time: formatTime(form.morningStart),
@@ -99,12 +84,10 @@ function Onboarding() {
         is_evening_reminder_enabled: true
       });
 
-      navigate("/morning-checkin", { replace: true });
+      navigate("/morning-checkin");
     } catch (err) {
       console.error("ERROR:", err);
       setToast({ message: err.message || "Something went wrong", type: "error" });
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -126,11 +109,9 @@ function Onboarding() {
         </div>
 
         <div className="flex gap-8 flex-1 min-h-0">
-          {/* Left — About You */}
           <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-7 flex flex-col">
             <h3 className="font-semibold text-gray-800 text-base mb-6">Tell us about yourself</h3>
 
-            {/* Photo Upload */}
             <div className="flex flex-col items-center mb-8">
               <div className="relative mb-3">
                 <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-white shadow-md bg-gray-200">
@@ -152,7 +133,6 @@ function Onboarding() {
               )}
             </div>
 
-            {/* Name fields */}
             <div className="flex gap-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-600 mb-1">First Name</label>
@@ -160,14 +140,15 @@ function Onboarding() {
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 focus:bg-white transition" />
               </div>
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-600 mb-1">Last Name <span className="text-gray-300 font-normal text-xs">(optional)</span></label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">
+                  Last Name <span className="text-gray-300 font-normal text-xs">(optional)</span>
+                </label>
                 <input name="lastName" placeholder="e.g. Varun" value={form.lastName} onChange={handleChange}
                   className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-400 focus:bg-white transition" />
               </div>
             </div>
           </div>
 
-          {/* Right — Daily Rhythm */}
           <div className="w-[340px] flex flex-col gap-4">
             <h3 className="font-semibold text-gray-800 text-base">Set your daily rhythm</h3>
 
@@ -212,29 +193,10 @@ function Onboarding() {
         </div>
 
         <div className="flex justify-end mt-6">
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className={`flex items-center gap-2 px-7 py-3 rounded-xl font-medium text-sm shadow-md transition-all ${
-              submitting
-                ? "bg-blue-400 cursor-not-allowed text-white"
-                : "bg-blue-600 hover:bg-blue-700 active:scale-95 text-white"
-            }`}
-          >
-            {submitting ? (
-              <>
-                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
-                </svg>
-                Setting up...
-              </>
-            ) : (
-              <>
-                Complete Setup
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              </>
-            )}
+          <button onClick={handleSubmit}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white px-7 py-3 rounded-xl font-medium text-sm shadow-md transition-all">
+            Complete Setup
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
       </div>

@@ -59,12 +59,13 @@ export const uploadPhotoAPI = async (file) => {
 };
 
 export const getUserAPI = async () => {
-  const res = await fetch(`${BASE_URL}/users`, {
+  const res = await fetch(`${BASE_URL}/users/me`, {
     method: "GET",
     headers: getHeaders()
   });
   return handleResponse(res);
 };
+
 
 // ================= SETTINGS =================
 

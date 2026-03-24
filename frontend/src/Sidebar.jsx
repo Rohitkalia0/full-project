@@ -31,17 +31,10 @@ function Sidebar({ activePath, onNavigate }) {
   const [photoUrl, setPhotoUrl] = useState(null);
 
   useEffect(() => {
-    const refresh = () => {
-      setFirstName(localStorage.getItem("first_name") || "");
-      setLastName(localStorage.getItem("last_name") || "");
-      setEmail(localStorage.getItem("user_email") || "");
-      setPhotoUrl(localStorage.getItem("photo_url") || null);
-    };
-    refresh();
-
-    // Listen for storage changes (e.g. photo updated in Settings)
-    window.addEventListener("storage", refresh);
-    return () => window.removeEventListener("storage", refresh);
+    setFirstName(localStorage.getItem("first_name") || "");
+    setLastName(localStorage.getItem("last_name") || "");
+    setEmail(localStorage.getItem("user_email") || "");
+    setPhotoUrl(localStorage.getItem("photo_url") || null);
   }, [activePath]);
 
   const fullName = [firstName, lastName].filter(Boolean).join(" ") || "Your Name";
@@ -79,25 +72,20 @@ function Sidebar({ activePath, onNavigate }) {
 
         <nav className="flex-1 px-4 py-6 flex flex-col gap-1">
           {navItems.map(({ label, path }) => (
-            <button
-              key={path}
-              onClick={() => handleNav(path)}
+            <button key={path} onClick={() => handleNav(path)}
               className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 activePath === path ? "bg-blue-50 text-blue-700" : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-              }`}
-            >
+              }`}>
               {label}
             </button>
           ))}
         </nav>
 
         <div className="px-4 pb-5 flex flex-col gap-2 border-t border-gray-100 pt-4">
-          <button
-            onClick={() => handleNav("/settings")}
+          <button onClick={() => handleNav("/settings")}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all group ${
               activePath === "/settings" ? "bg-blue-50" : "hover:bg-gray-50"
-            }`}
-          >
+            }`}>
             <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border-2 border-gray-100 shadow-sm flex items-center justify-center bg-blue-100">
               {photoUrl
                 ? <img src={photoUrl} alt="avatar" className="w-full h-full object-cover" />
@@ -105,19 +93,13 @@ function Sidebar({ activePath, onNavigate }) {
               }
             </div>
             <div className="flex-1 text-left min-w-0">
-              <p className={`text-sm font-semibold truncate leading-tight ${activePath === "/settings" ? "text-blue-700" : "text-gray-800"}`}>
-                {fullName}
-              </p>
-              <p className={`text-[11px] truncate mt-0.5 ${activePath === "/settings" ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`}>
-                {email}
-              </p>
+              <p className={`text-sm font-semibold truncate leading-tight ${activePath === "/settings" ? "text-blue-700" : "text-gray-800"}`}>{fullName}</p>
+              <p className={`text-[11px] truncate mt-0.5 ${activePath === "/settings" ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`}>{email}</p>
             </div>
           </button>
 
-          <button
-            onClick={() => setShowLogoutModal(true)}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
-          >
+          <button onClick={() => setShowLogoutModal(true)}
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all">
             <LogoutIcon />Log Out
           </button>
         </div>
