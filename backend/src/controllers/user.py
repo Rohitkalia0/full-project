@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import src.services.user as services
 from src.models.user import User
 from src.schemas.api_response import SuccessResponse
-from src.schemas.user import UserPartialUpdateRequest, UserProfileResponse, UserResponse
+from src.schemas.user import UserPartialUpdateRequest, UserResponse
 
 
 def partial_update_user(
@@ -38,7 +38,7 @@ def update_profile_picture(
     file: UploadFile,
     user: User,
     db: Session
-) -> SuccessResponse[UserProfileResponse]:
+) -> SuccessResponse[UserResponse]:
 
     user_data = services.update_profile_picture(
         file,
@@ -46,7 +46,7 @@ def update_profile_picture(
         db
     )
 
-    return SuccessResponse[UserProfileResponse](
+    return SuccessResponse[UserResponse](
         message="profile picture updated successfully",
         data=user_data
     )
