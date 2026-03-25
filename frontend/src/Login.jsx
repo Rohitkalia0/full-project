@@ -26,7 +26,7 @@ function Login() {
   const [toast, setToast] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.com$/;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const emailValid = emailRegex.test(formData.email);
 
   const getEmailBorderClass = () => {

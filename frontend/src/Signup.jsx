@@ -24,9 +24,10 @@ function Signup() {
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.com$/;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const emailValid = emailRegex.test(formData.email);
-  const passwordValid = formData.password.length >= 1;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
+  const passwordValid = passwordRegex.test(formData.password);
   const confirmValid = formData.confirm_password.length > 0 && formData.confirm_password === formData.password;
   const confirmMismatch = formData.confirm_password.length > 0 && formData.confirm_password !== formData.password;
 
@@ -55,6 +56,7 @@ function Signup() {
     if (!formData.email) newErrors.email = "Email is required";
     else if (!emailValid) newErrors.email = "Enter a valid email";
     if (!formData.password) newErrors.password = "Password is required";
+    else if (!passwordRegex.test(formData.password)) newErrors.password = "Password must be 8+ chars with uppercase, lowercase, number, and special character (@$!%*?&)";
     if (!formData.confirm_password) newErrors.confirm_password = "Please confirm your password";
     else if (formData.password !== formData.confirm_password) newErrors.confirm_password = "Passwords do not match";
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
@@ -129,6 +131,7 @@ function Signup() {
                   {showPassword ? <EyeOpen /> : <EyeClosed />}
                 </button>
               </div>
+              {touched.password && !passwordValid && formData.password.length > 0 && <p className="text-red-500 text-xs mt-1">Must include uppercase, lowercase, number, and special character (@$!%*?&), 8+ chars</p>}
               {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
             </div>
 

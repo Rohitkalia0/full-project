@@ -1,4 +1,4 @@
-const BASE_URL = "https://full-project-9w4o.onrender.com/api/v1";
+const BASE_URL = "http://127.0.0.1:8000/api/v1";
 
 const getToken = () => localStorage.getItem("access_token");
 
@@ -66,7 +66,6 @@ export const getUserAPI = async () => {
   return handleResponse(res);
 };
 
-
 // ================= SETTINGS =================
 
 export const createSettingAPI = async (payload) => {
@@ -91,6 +90,13 @@ export const updateSettingAPI = async (payload) => {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
+  });
+  return handleResponse(res);
+};
+export const removePhotoAPI = async () => {
+  const res = await fetch(`${BASE_URL}/users/profile-picture`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${getToken()}` }
   });
   return handleResponse(res);
 };

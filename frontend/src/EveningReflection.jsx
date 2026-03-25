@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { createEveningAPI, updateEveningAPI, getEveningAPI } from "./api";
 import Sidebar from "./Sidebar";
@@ -30,107 +30,216 @@ function Toast({ message, type, onClose }) {
   return <div className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium ${colors[type]}`}>{icons[type]}{message}</div>;
 }
 
-// The default form — used both as initial state AND as "last saved" baseline
-// so hasChanges starts as false on page load
 const DEFAULT_FORM = { win: "", lesson: "", mistake: "", distraction: "", mood_rating: 2, energy_rating: 2 };
+
+// Local date YYYY-MM-DD (matches backend's date.today())
+function getToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Build form object from backend response data
+function buildFormFromData(data) {
+  return {
+    win: data.win || "",
+    lesson: data.lesson || "",
+    mistake: data.mistake || "",
+    distraction: data.distraction || "",
+    mood_rating: Number(data.mood_rating) || 2,
+    energy_rating: Number(data.energy_rating) || 2,
+  };
+}
 
 function EveningReflection() {
   const navigate = useNavigate();
-  const [eveningId, setEveningId] = useState(null);
-  const [form, setForm] = useState(DEFAULT_FORM);
-  // savedForm initialised to DEFAULT_FORM (not null) — hasChanges will be false until user edits
-  const [savedForm, setSavedForm] = useState(DEFAULT_FORM);
+  const [form, setForm] = useState({ ...DEFAULT_FORM });
+  const [savedForm, setSavedForm] = useState({ ...DEFAULT_FORM });
   const [toast, setToast] = useState(null);
-  const [unsavedModal, setUnsavedModal] = useState(null);
+  const [showModal, setShowModal] = useState(false);
   const [pageReady, setPageReady] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Refs for stable access in callbacks (avoids stale closures)
+  const eveningIdRef = useRef(null);
+  const formRef = useRef({ ...DEFAULT_FORM });
+  const savedFormRef = useRef({ ...DEFAULT_FORM });
   const pendingNavRef = useRef(null);
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
-  useEffect(() => { loadEvening(); }, []);
+  // Keep refs in sync with state
+  const updateForm = useCallback((next) => {
+    setForm(next);
+    formRef.current = next;
+  }, []);
 
-  const loadEvening = async () => {
-    try {
-      const today = new Date().toISOString().split("T")[0];
-      const res = await getEveningAPI(today);
-      const data = res?.data ?? res;
-      if (data?.id) {
-        setEveningId(data.id);
-        const loaded = {
-          win: data.win || "",
-          lesson: data.lesson || "",
-          mistake: data.mistake || "",
-          distraction: data.distraction || "",
-          mood_rating: data.mood_rating ?? 2,
-          energy_rating: data.energy_rating ?? 2,
-        };
-        // Set both form and savedForm to the loaded data — hasChanges stays false
-        setForm(loaded);
-        setSavedForm(loaded);
+  const updateSavedForm = useCallback((next) => {
+    setSavedForm(next);
+    savedFormRef.current = next;
+  }, []);
+
+  const updateEveningId = useCallback((id) => {
+    eveningIdRef.current = id;
+  }, []);
+
+  // --- Load evening on mount ---
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getEveningAPI(getToday());
+        const data = res?.data ?? res;
+        if (data?.id) {
+          updateEveningId(data.id);
+          const loaded = buildFormFromData(data);
+          updateForm(loaded);
+          updateSavedForm({ ...loaded });
+        }
+      } catch {
+        // No evening for today — that's fine, start fresh
+      } finally {
+        setPageReady(true);
       }
-      // If no evening yet, both form and savedForm remain DEFAULT_FORM → hasChanges = false
-    } catch {
-      console.log("No evening yet");
-    } finally {
-      setPageReady(true);
-    }
-  };
+    })();
+  }, []);
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-
-  // True only when form differs from last-saved state
+  // --- Derived ---
   const hasChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
 
-  const handleSave = async () => {
-    if (!hasChanges) return;
-    try {
-      if (!eveningId) {
-        const res = await createEveningAPI(form);
-        const data = res?.data ?? res;
-        if (data?.id) setEveningId(data.id);
-        // After create, re-sync savedForm
-        setSavedForm({ ...form });
-        showToast("Evening reflection submitted!", "success");
-      } else {
-        await updateEveningAPI(eveningId, form);
-        setSavedForm({ ...form });
-        showToast("Saved!", "success");
-      }
-    } catch (err) {
-      showToast(err.message || "Something went wrong", "error");
-    }
+  // --- Handlers ---
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm(prev => {
+      const next = { ...prev, [name]: value };
+      formRef.current = next;
+      return next;
+    });
   };
 
-  const handleNavigate = (path) => {
-    if (hasChanges) {
+  const setRating = (field, value) => {
+    setForm(prev => {
+      const next = { ...prev, [field]: value };
+      formRef.current = next;
+      return next;
+    });
+  };
+
+  // --- Save (uses refs so it's safe from stale closures) ---
+  const handleSave = useCallback(async () => {
+    const currentForm = formRef.current;
+    const currentSaved = savedFormRef.current;
+    const currentId = eveningIdRef.current;
+
+    // No changes → nothing to do
+    if (JSON.stringify(currentForm) === JSON.stringify(currentSaved)) return true;
+
+    // Validate text fields
+    const textFields = ["win", "lesson", "mistake", "distraction"];
+    for (const field of textFields) {
+      const val = currentForm[field].trim();
+      if (val.length < 2) {
+        showToast("All fields must be at least 2 characters", "error");
+        return false;
+      }
+      if (val.length > 2000) {
+        showToast("Fields cannot exceed 2000 characters", "error");
+        return false;
+      }
+    }
+
+    setSaving(true);
+    try {
+      // Build payload — trim text, ensure ratings are numbers
+      const payload = {
+        win: currentForm.win.trim(),
+        lesson: currentForm.lesson.trim(),
+        mistake: currentForm.mistake.trim(),
+        distraction: currentForm.distraction.trim(),
+        mood_rating: Number(currentForm.mood_rating),
+        energy_rating: Number(currentForm.energy_rating),
+      };
+
+      let responseData;
+
+      if (!currentId) {
+        // CREATE
+        const res = await createEveningAPI(payload);
+        responseData = res?.data ?? res;
+        if (!responseData?.id) throw new Error("Failed to create evening reflection");
+        updateEveningId(responseData.id);
+        showToast("Evening reflection saved!", "success");
+      } else {
+        // UPDATE
+        const res = await updateEveningAPI(currentId, payload);
+        responseData = res?.data ?? res;
+        showToast("Saved!", "success");
+      }
+
+      // Sync form + savedForm from backend response (source of truth)
+      if (responseData?.id) {
+        const synced = buildFormFromData(responseData);
+        updateForm(synced);
+        updateSavedForm({ ...synced });
+      } else {
+        // Fallback: use the trimmed payload as saved baseline
+        updateForm({ ...payload });
+        updateSavedForm({ ...payload });
+      }
+
+      return true;
+    } catch (err) {
+      showToast(err.message || "Something went wrong", "error");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, []);
+
+  // --- Navigation with unsaved-changes guard ---
+  const handleNavigate = useCallback((path) => {
+    const changed = JSON.stringify(formRef.current) !== JSON.stringify(savedFormRef.current);
+    if (changed) {
       pendingNavRef.current = path;
-      setUnsavedModal({
-        onSave: async () => { setUnsavedModal(null); await handleSave(); navigate(pendingNavRef.current); },
-        onDiscard: () => { setUnsavedModal(null); navigate(pendingNavRef.current); },
-        onCancel: () => { setUnsavedModal(null); pendingNavRef.current = null; },
-      });
+      setShowModal(true);
     } else {
       navigate(path);
     }
-  };
+  }, [navigate]);
 
+  // Modal actions — always read latest via refs
+  const onModalSave = useCallback(async () => {
+    setShowModal(false);
+    const saved = await handleSave();
+    if (saved) navigate(pendingNavRef.current);
+  }, [handleSave, navigate]);
+
+  const onModalDiscard = useCallback(() => {
+    setShowModal(false);
+    navigate(pendingNavRef.current);
+  }, [navigate]);
+
+  const onModalCancel = useCallback(() => {
+    setShowModal(false);
+    pendingNavRef.current = null;
+  }, []);
+
+  // --- Labels ---
   const moodLabels = ["", "Low", "Fair", "Good", "Great", "Excellent"];
   const energyLabels = ["", "Drained", "Tired", "Steady", "Energised", "Charged"];
 
-  if (!pageReady) return (
-    <div className="flex h-screen items-center justify-center" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  const saveDisabled = !hasChanges || saving;
 
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
-      {unsavedModal && <UnsavedModal onSave={unsavedModal.onSave} onDiscard={unsavedModal.onDiscard} onCancel={unsavedModal.onCancel} />}
+      {showModal && <UnsavedModal onSave={onModalSave} onDiscard={onModalDiscard} onCancel={onModalCancel} />}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
       <Sidebar activePath="/evening-reflection" onNavigate={handleNavigate} />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      {!pageReady ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : <main className="flex-1 flex flex-col overflow-hidden">
         <div className="px-10 pt-8 pb-4 shrink-0">
           <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Evening Reflection</p>
           <h1 className="text-2xl font-bold text-gray-800 leading-tight">Observe before ending the day</h1>
@@ -146,12 +255,14 @@ function EveningReflection() {
               { name: "distraction", label: "Primary Distraction", placeholder: "What pulled your focus?" },
             ].map(({ name, label, placeholder }) => (
               <div key={name} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">{label}</label>
+                <label htmlFor={name} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-2 cursor-pointer">{label}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></label>
                 <textarea
+                  id={name}
                   name={name}
                   value={form[name]}
                   onChange={handleChange}
                   placeholder={placeholder}
+                  maxLength={2000}
                   rows={2}
                   style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
                   onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
@@ -169,7 +280,7 @@ function EveningReflection() {
               </div>
               <div className="flex justify-between mb-3">
                 {[1,2,3,4,5].map((n) => (
-                  <button key={n} onClick={() => setForm({ ...form, mood_rating: n })}
+                  <button key={n} onClick={() => setRating("mood_rating", n)}
                     className={`w-10 h-10 rounded-full text-sm font-semibold transition-all border-2 ${form.mood_rating === n ? "bg-blue-500 border-blue-500 text-white shadow-md scale-110" : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-400"}`}>
                     {n}
                   </button>
@@ -185,7 +296,7 @@ function EveningReflection() {
               </div>
               <div className="flex justify-between mb-3">
                 {[1,2,3,4,5].map((n) => (
-                  <button key={n} onClick={() => setForm({ ...form, energy_rating: n })}
+                  <button key={n} onClick={() => setRating("energy_rating", n)}
                     className={`w-10 h-10 rounded-full text-sm font-semibold transition-all border-2 ${form.energy_rating === n ? "bg-blue-500 border-blue-500 text-white shadow-md scale-110" : "border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-400"}`}>
                     {n}
                   </button>
@@ -196,18 +307,18 @@ function EveningReflection() {
 
             <button
               onClick={handleSave}
-              disabled={!hasChanges}
+              disabled={saveDisabled}
               className={`w-full py-3 rounded-xl font-medium text-sm shadow-md transition-all ${
-                hasChanges
+                !saveDisabled
                   ? "bg-blue-600 hover:bg-blue-700 active:scale-95 text-white"
                   : "bg-blue-200 text-blue-100 cursor-not-allowed"
               }`}
             >
-              Save
+              {saving ? "Saving..." : "Save"}
             </button>
           </div>
         </div>
-      </main>
+      </main>}
     </div>
   );
 }

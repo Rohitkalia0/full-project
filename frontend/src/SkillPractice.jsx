@@ -5,6 +5,11 @@ import {
 } from "./api";
 import Sidebar from "./Sidebar";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MAX_CHARS = 2000;
+const MIN_CHARS = 2;
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
 const StarIcon = ({ filled }) => (<svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>);
 const ShieldIcon = ({ filled }) => (<svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>);
 const TrashIcon = ({ size = 14 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" /></svg>);
@@ -13,8 +18,12 @@ const CheckIcon = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="n
 const PlusIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>);
 const BadgeCheckIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 3.2L18 4l.8 3.8L22 10l-2.4 3.2.4 3.8-3.8.8L14 20l-2-2.4L10 20l-2.2-2.2-3.8-.8.4-3.8L2 10l3.2-2.2L6 4l3.6 1.2z" /><polyline points="9 12 11 14 15 10" /></svg>);
 const CloseIcon = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>);
-const ClockIcon = () => (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>);
+const ClockIcon = ({ size = 13 }) => (<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>);
+const LayersIcon = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>);
+const ActivityIcon = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>);
+const TrophyIcon = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 010-5H6"/><path d="M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/></svg>);
 
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
 function Tooltip({ text, children }) {
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
@@ -40,6 +49,7 @@ function Tooltip({ text, children }) {
   );
 }
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
 function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
   const colors = { success: "bg-blue-50 border-blue-200 text-blue-700", error: "bg-red-50 border-red-200 text-red-700", warning: "bg-amber-50 border-amber-200 text-amber-700" };
@@ -55,6 +65,7 @@ function Toast({ message, type, onClose }) {
   );
 }
 
+// ─── Delete Modal ─────────────────────────────────────────────────────────────
 function DeleteModal({ message, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-[9998] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
@@ -71,23 +82,72 @@ function DeleteModal({ message, onConfirm, onCancel }) {
   );
 }
 
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
       <div className="h-4 bg-gray-100 rounded-lg w-3/4 mb-3" />
-      <div className="h-2 bg-gray-100 rounded-full mb-4" />
+      <div className="h-2 bg-gray-100 rounded-full w-full mb-3" />
       <div className="h-3 bg-gray-100 rounded-lg w-1/3" />
     </div>
   );
 }
 
+// ─── Validation helpers ───────────────────────────────────────────────────────
+const validateText = (val, fieldName = "This field") => {
+  const trimmed = val.trim();
+  if (!trimmed) return `${fieldName} cannot be empty`;
+  if (trimmed.length < MIN_CHARS) return `${fieldName} must be at least ${MIN_CHARS} characters`;
+  if (trimmed.length > MAX_CHARS) return `${fieldName} cannot exceed ${MAX_CHARS} characters`;
+  return "";
+};
+
+// ─── Sort: incomplete first, completed at bottom ──────────────────────────────
 const sortActivities = (list) => [
   ...list.filter(a => !a.is_completed),
   ...list.filter(a => a.is_completed),
 ];
 
-// ── Skill Detail Modal ──
-function SkillModal({ skill, today, onClose, onSkillUpdated, showToast }) {
+// ─── Format minutes helper ────────────────────────────────────────────────────
+const formatMins = (mins) => {
+  if (!mins || mins === 0) return null;
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+};
+
+// ─── Stats Strip (right of Add Skill input) ───────────────────────────────────
+function StatsStrip({ skills, skillActivities }) {
+  const totalSkills = skills.length;
+  const allActs = Object.values(skillActivities).flat();
+  const totalActs = allActs.length;
+  const doneActs = allActs.filter(a => a.is_completed).length;
+  const totalMins = allActs.reduce((sum, a) => sum + (a.minutes_practised || 0), 0);
+
+  const stats = [
+    { icon: <LayersIcon />, value: totalSkills, label: "skills", color: "text-blue-600 bg-blue-50 border-blue-100" },
+    { icon: <ActivityIcon />, value: `${doneActs}/${totalActs}`, label: "done", color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
+    ...(totalMins > 0 ? [{ icon: <ClockIcon size={13} />, value: formatMins(totalMins), label: "logged", color: "text-violet-600 bg-violet-50 border-violet-100" }] : []),
+  ];
+
+  if (totalSkills === 0) return null;
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      {stats.map((s, i) => (
+        <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold ${s.color}`}>
+          {s.icon}
+          <span>{s.value}</span>
+          <span className="font-normal opacity-70">{s.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Skill Detail Modal ───────────────────────────────────────────────────────
+function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged, showToast }) {
   const mapActivity = (a, fromYesterday) => ({
     id: a.id,
     name: a.name,
@@ -107,33 +167,34 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, showToast }) {
   );
   const [newActivityName, setNewActivityName] = useState("");
   const [newActivityError, setNewActivityError] = useState("");
+  const [newMinutes, setNewMinutes] = useState("");
+
+  // Full edit state per activity
   const [editingActivityId, setEditingActivityId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [editTextError, setEditTextError] = useState("");
+  const [editMinutes, setEditMinutes] = useState("");
+
+  // Inline minutes-only edit state
+  const [minutesEditId, setMinutesEditId] = useState(null);
+  const [minutesEditVal, setMinutesEditVal] = useState("");
+
   const [editingTitle, setEditingTitle] = useState(false);
   const [skillName, setSkillName] = useState(skill.name || "");
+  const [skillNameError, setSkillNameError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [editingMinutesId, setEditingMinutesId] = useState(null);
-  const [minutesText, setMinutesText] = useState("");
 
   const allDone = activities.length > 0 && activities.every(a => a.is_completed);
   const doneCount = activities.filter(a => a.is_completed).length;
+  const totalMins = activities.reduce((sum, a) => sum + (a.minutes_practised || 0), 0);
+
+  useEffect(() => { onActivitiesChanged(skill.id, activities); }, [activities]);
 
   useEffect(() => {
     const handler = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
-
-  // Notify parent of latest activities when closing
-  const handleClose = () => {
-    onSkillUpdated(skill.id, { activities: activities.map(a => ({
-      id: a.id, name: a.name, is_completed: a.is_completed,
-      is_priority: a.is_priority, is_habit_to_protect: a.is_habit_to_protect,
-      minutes_practised: a.minutes_practised, entry_date: a.entry_date || today,
-      isCarriedOver: a.isCarriedOver
-    })) });
-    onClose();
-  };
 
   const toggleDone = async (id) => {
     const target = activities.find(a => a.id === id);
@@ -156,58 +217,108 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, showToast }) {
     const current = activities.find(a => a.id === id);
     const updated = activities.map(a => ({ ...a, is_priority: a.id === id ? !current.is_priority : false }));
     setActivities(sortActivities(updated));
-    try { await updateSkillActivitiesAPI(skill.id, { activities: updated.map(a => ({ id: a.id, is_priority: a.is_priority })) }); }
-    catch (err) { console.error("Toggle priority failed:", err); }
+    try {
+      await updateSkillActivitiesAPI(skill.id, { activities: updated.map(a => ({ id: a.id, is_priority: a.is_priority })) });
+    } catch (err) { console.error("Toggle priority failed:", err); }
   };
 
   const toggleHabit = async (id) => {
     const current = activities.find(a => a.id === id);
     const updated = activities.map(a => ({ ...a, is_habit_to_protect: a.id === id ? !current.is_habit_to_protect : false }));
     setActivities(sortActivities(updated));
-    try { await updateSkillActivitiesAPI(skill.id, { activities: updated.map(a => ({ id: a.id, is_habit_to_protect: a.is_habit_to_protect })) }); }
-    catch (err) { console.error("Toggle habit failed:", err); }
-  };
-
-  const saveMinutes = async (id) => {
-    const val = Math.max(0, Math.min(1440, parseInt(minutesText) || 0));
-    setActivities(prev => sortActivities(prev.map(a => a.id === id ? { ...a, minutes_practised: val } : a)));
-    setEditingMinutesId(null);
-    try { await updateSkillActivitiesAPI(skill.id, { activities: [{ id, minutes_practised: val }] }); }
-    catch (err) { console.error("Save minutes failed:", err); }
+    try {
+      await updateSkillActivitiesAPI(skill.id, { activities: updated.map(a => ({ id: a.id, is_habit_to_protect: a.is_habit_to_protect })) });
+    } catch (err) { console.error("Toggle habit failed:", err); }
   };
 
   const addActivity = async () => {
-    if (!newActivityName.trim()) { setNewActivityError("Activity name cannot be empty"); return; }
-    if (newActivityName.trim().length < 2) { setNewActivityError("Activity name must be at least 2 characters"); return; }
+    const nameErr = validateText(newActivityName, "Activity name");
+    if (nameErr) { setNewActivityError(nameErr); return; }
+    const mins = newMinutes === "" ? 0 : parseInt(newMinutes, 10);
+    if (newMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 9999)) {
+      setNewActivityError("Minutes must be between 0 and 9999");
+      return;
+    }
+    const isDuplicate = activities.some(a => a.name.trim().toLowerCase() === newActivityName.trim().toLowerCase());
+    if (isDuplicate) { setNewActivityError("An activity with this name already exists"); return; }
     setNewActivityError("");
     try {
       const res = await createSkillActivitiesAPI(skill.id, {
-        activities: [{ name: newActivityName.trim(), is_priority: false, is_habit_to_protect: false, is_completed: false, minutes_practised: 0 }]
+        activities: [{
+          name: newActivityName.trim(),
+          is_priority: false,
+          is_habit_to_protect: false,
+          is_completed: false,
+          minutes_practised: mins,
+        }]
       });
       const created = res?.data?.activities || res?.activities || [];
       const last = created[created.length - 1];
       if (last) {
         const newItem = {
-          id: last.id, name: last.name, is_completed: false,
-          is_priority: false, is_habit_to_protect: false, minutes_practised: 0,
-          isCarriedOver: false, entry_date: today
+          id: last.id,
+          name: last.name,
+          is_completed: false,
+          is_priority: false,
+          is_habit_to_protect: false,
+          minutes_practised: mins,
+          isCarriedOver: false,
         };
         setActivities(prev => sortActivities([newItem, ...prev]));
       }
       setNewActivityName("");
+      setNewMinutes("");
     } catch (err) {
       console.error("Add activity failed:", err);
       showToast("Failed to add activity", "error");
     }
   };
 
-  const startEdit = (a) => { setEditingActivityId(a.id); setEditText(a.name); };
+  const startEdit = (a) => {
+    setMinutesEditId(null); // close any inline minutes edit
+    setEditingActivityId(a.id);
+    setEditText(a.name);
+    setEditTextError("");
+    setEditMinutes(a.minutes_practised > 0 ? String(a.minutes_practised) : "");
+  };
+
   const saveEdit = async (id) => {
-    if (!editText.trim() || editText.trim().length < 2) return;
-    const updated = activities.map(a => a.id === id ? { ...a, name: editText.trim() } : a);
-    setActivities(sortActivities(updated)); setEditingActivityId(null);
-    try { await updateSkillActivitiesAPI(skill.id, { activities: [{ id, name: editText.trim() }] }); }
-    catch (err) { console.error("Edit failed:", err); }
+    const nameErr = validateText(editText, "Activity name");
+    if (nameErr) { setEditTextError(nameErr); return; }
+    const mins = editMinutes === "" ? 0 : parseInt(editMinutes, 10);
+    if (editMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 9999)) {
+      setEditTextError("Minutes must be between 0 and 9999");
+      return;
+    }
+    const updated = activities.map(a =>
+      a.id === id ? { ...a, name: editText.trim(), minutes_practised: mins } : a
+    );
+    setActivities(sortActivities(updated));
+    setEditingActivityId(null);
+    setEditTextError("");
+    try {
+      await updateSkillActivitiesAPI(skill.id, { activities: [{ id, name: editText.trim(), minutes_practised: mins }] });
+    } catch (err) { console.error("Edit failed:", err); }
+  };
+
+  const cancelEdit = () => {
+    setEditingActivityId(null);
+    setEditTextError("");
+    setEditMinutes("");
+  };
+
+  // ── Inline minutes-only save ──────────────────────────────────────────────
+  const saveInlineMinutes = async (id) => {
+    const mins = minutesEditVal === "" ? 0 : parseInt(minutesEditVal, 10);
+    if (minutesEditVal !== "" && (isNaN(mins) || mins < 0 || mins > 9999)) {
+      setMinutesEditId(null);
+      return;
+    }
+    setActivities(prev => prev.map(a => a.id === id ? { ...a, minutes_practised: mins } : a));
+    setMinutesEditId(null);
+    try {
+      await updateSkillActivitiesAPI(skill.id, { activities: [{ id, minutes_practised: mins }] });
+    } catch (err) { console.error("Inline minutes save failed:", err); }
   };
 
   const doDeleteActivity = async () => {
@@ -219,8 +330,10 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, showToast }) {
   };
 
   const saveSkillName = async () => {
+    const err = validateText(skillName, "Skill name");
+    if (err) { setSkillNameError(err); return; }
+    setSkillNameError("");
     setEditingTitle(false);
-    if (!skillName.trim() || skillName.trim().length < 2) return;
     try {
       await updateSkillAPI(skill.id, { name: skillName.trim() });
       onSkillUpdated(skill.id, { name: skillName.trim() });
@@ -230,109 +343,227 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, showToast }) {
   return (
     <>
       {deleteTarget && (
-        <DeleteModal message="This activity will be permanently removed." onConfirm={doDeleteActivity} onCancel={() => setDeleteTarget(null)} />
+        <DeleteModal
+          message="This activity will be permanently removed."
+          onConfirm={doDeleteActivity}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
-      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={handleClose}>
-        <div className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-          style={{ width: "min(600px, 95vw)", maxHeight: "88vh" }}
-          onClick={e => e.stopPropagation()}>
 
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.4)" }}
+        onClick={onClose}
+      >
+        <div
+          className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          style={{ width: "min(600px, 95vw)", maxHeight: "88vh" }}
+          onClick={e => e.stopPropagation()}
+        >
           {/* Header */}
           <div className={`px-6 pt-5 pb-4 border-b flex items-start justify-between gap-3 ${allDone ? "bg-blue-50 border-blue-100" : isFromYesterday ? "bg-amber-50 border-amber-100" : "border-gray-100"}`}>
             <div className="flex-1 min-w-0">
               {editingTitle ? (
-                <input autoFocus value={skillName} onChange={e => setSkillName(e.target.value)}
-                  onBlur={saveSkillName} onKeyDown={e => e.key === "Enter" && saveSkillName()}
-                  className="w-full text-lg font-bold bg-white border border-blue-300 rounded-xl px-3 py-1.5 outline-none text-gray-800" />
+                <div>
+                  <input
+                    autoFocus
+                    value={skillName}
+                    onChange={e => { setSkillName(e.target.value); setSkillNameError(""); }}
+                    onBlur={saveSkillName}
+                    onKeyDown={e => { if (e.key === "Enter") saveSkillName(); if (e.key === "Escape") { setEditingTitle(false); setSkillNameError(""); } }}
+                    maxLength={MAX_CHARS}
+                    className={`w-full text-lg font-bold bg-white border rounded-xl px-3 py-1.5 outline-none text-gray-800 ${skillNameError ? "border-red-400" : "border-blue-300"}`}
+                  />
+                  {skillNameError && <p className="text-red-500 text-xs mt-1">{skillNameError}</p>}
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <h2 className={`text-lg font-bold truncate ${allDone ? "text-blue-700" : "text-gray-800"}`}>{skillName}</h2>
-                  <button onClick={() => setEditingTitle(true)} className="p-1 rounded-lg text-gray-300 hover:text-blue-600 hover:bg-blue-50 transition shrink-0"><PencilIcon /></button>
+                  <button onClick={() => setEditingTitle(true)} className="p-1 rounded-lg text-gray-300 hover:text-blue-600 hover:bg-blue-50 transition shrink-0">
+                    <PencilIcon />
+                  </button>
                 </div>
               )}
-              <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
                 <span className="text-xs text-gray-400">{doneCount}/{activities.length} done</span>
+                {/* Total time logged in modal header */}
+                {totalMins > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-violet-500">
+                    <ClockIcon size={11} />{formatMins(totalMins)} logged
+                  </span>
+                )}
                 {allDone && <span className="flex items-center gap-1 text-xs font-semibold text-blue-600"><BadgeCheckIcon /> Completed!</span>}
                 {isFromYesterday && !allDone && <span className="text-[10px] font-medium text-amber-500">Carried over from yesterday</span>}
               </div>
             </div>
-            <button onClick={handleClose} className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition shrink-0"><CloseIcon /></button>
+            <button onClick={onClose} className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition shrink-0">
+              <CloseIcon />
+            </button>
           </div>
 
-          {/* Add activity */}
-          <div className="px-6 py-4 border-b border-gray-100">
-            <div className="flex gap-2">
+          {/* Add activity input */}
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+            <div className="flex gap-2 items-start">
               <div className="flex-1 flex flex-col gap-1">
-                <input value={newActivityName} onChange={e => { setNewActivityName(e.target.value); if (newActivityError) setNewActivityError(""); }}
+                <input
+                  value={newActivityName}
+                  onChange={e => { setNewActivityName(e.target.value); if (newActivityError) setNewActivityError(""); }}
                   onKeyDown={e => e.key === "Enter" && addActivity()}
-                  placeholder="Add a new activity..."
-                  maxLength={2000}
-                  className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-gray-50 border-gray-200 focus:border-blue-300 focus:bg-white"}`}
+                  placeholder="Activity name..."
+                  maxLength={MAX_CHARS}
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-white border-gray-200 focus:border-blue-300"}`}
                 />
-                {newActivityError && <p className="text-red-500 text-xs pl-1">{newActivityError}</p>}
+                {newActivityError && <p className="text-red-500 text-xs font-medium">{newActivityError}</p>}
               </div>
-              <button onClick={addActivity} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm flex items-center gap-1.5 shrink-0 self-start">
+
+              <div className="flex items-center gap-1.5 shrink-0 bg-white border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-blue-300 transition" style={{ width: "100px" }}>
+                <ClockIcon />
+                <input
+                  type="number"
+                  value={newMinutes}
+                  onChange={e => setNewMinutes(e.target.value)}
+                  placeholder="mins"
+                  min={0}
+                  max={9999}
+                  className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
+                />
+              </div>
+
+              <button
+                onClick={addActivity}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm flex items-center gap-1.5 shrink-0"
+              >
                 <PlusIcon /> Add
               </button>
             </div>
+            <p className="text-[10px] text-gray-400 mt-1.5 pl-0.5">
+              {newActivityName.length}/{MAX_CHARS} chars
+            </p>
           </div>
 
           {/* Activities list */}
           <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2">
-            {activities.length === 0 && <p className="text-gray-300 text-sm text-center py-8">No activities yet. Add one above.</p>}
+            {activities.length === 0 && (
+              <p className="text-gray-300 text-sm text-center py-8">No activities yet. Add one above.</p>
+            )}
             {activities.map(a => (
-              <div key={a.id} className={`flex flex-col px-4 py-3 rounded-xl border transition-all ${a.is_completed ? "bg-gray-50 border-gray-100 opacity-70" : a.isCarriedOver ? "bg-amber-50 border-amber-100" : "bg-white border-gray-200"}`}>
-                <div className="flex items-center gap-3">
-                  <button onClick={() => toggleDone(a.id)}
-                    className={`min-w-[20px] min-h-[20px] w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${a.is_completed ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 hover:border-blue-400"}`}>
-                    {a.is_completed && <CheckIcon />}
-                  </button>
-                  {editingActivityId === a.id ? (
-                    <input autoFocus value={editText} onChange={e => setEditText(e.target.value)}
-                      onBlur={() => saveEdit(a.id)} onKeyDown={e => e.key === "Enter" && saveEdit(a.id)}
-                      maxLength={2000}
-                      className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-2.5 py-1 outline-none text-gray-700" />
-                  ) : (
-                    <span className={`flex-1 text-sm ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
-                      {a.name}
-                      {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
-                    </span>
-                  )}
-                </div>
-
-                {/* Action row */}
-                <div className="flex items-center gap-1 mt-2.5 pt-2.5 border-t border-gray-100">
-                  <Tooltip text="Edit"><button onClick={() => startEdit(a)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition"><PencilIcon /></button></Tooltip>
-                  <Tooltip text="Priority"><button onClick={() => togglePriority(a.id)} className={`p-1.5 rounded-lg transition ${a.is_priority ? "text-amber-500 bg-amber-50" : "text-gray-400 hover:text-amber-400 hover:bg-amber-50"}`}><StarIcon filled={a.is_priority} /></button></Tooltip>
-                  <Tooltip text="Protect habit"><button onClick={() => toggleHabit(a.id)} className={`p-1.5 rounded-lg transition ${a.is_habit_to_protect ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-blue-500 hover:bg-blue-50"}`}><ShieldIcon filled={a.is_habit_to_protect} /></button></Tooltip>
-                  <Tooltip text="Delete"><button onClick={() => setDeleteTarget({ id: a.id })} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"><TrashIcon /></button></Tooltip>
-
-                  {/* Minutes practised */}
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <ClockIcon />
-                    {editingMinutesId === a.id ? (
-                      <input
-                        autoFocus
-                        type="number"
-                        min="0"
-                        max="1440"
-                        value={minutesText}
-                        onChange={e => setMinutesText(e.target.value)}
-                        onBlur={() => saveMinutes(a.id)}
-                        onKeyDown={e => e.key === "Enter" && saveMinutes(a.id)}
-                        className="w-16 text-xs bg-white border border-blue-300 rounded-lg px-2 py-1 outline-none text-gray-700 text-center"
-                      />
-                    ) : (
-                      <button
-                        onClick={() => { setEditingMinutesId(a.id); setMinutesText(String(a.minutes_practised)); }}
-                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition px-1.5 py-1 rounded-lg hover:bg-blue-50"
-                      >
-                        <span className="font-medium">{a.minutes_practised}</span>
-                        <span>min</span>
-                      </button>
-                    )}
+              <div
+                key={a.id}
+                className={`flex flex-col px-4 py-3 rounded-xl border transition-all ${
+                  a.is_completed ? "bg-gray-50 border-gray-100 opacity-70"
+                  : a.isCarriedOver ? "bg-amber-50 border-amber-100"
+                  : "bg-white border-gray-200"
+                }`}
+              >
+                {editingActivityId === a.id ? (
+                  /* ── Full edit mode ── */
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2 items-start">
+                      <div className="flex-1 flex flex-col gap-1">
+                        <input
+                          autoFocus
+                          value={editText}
+                          onChange={e => { setEditText(e.target.value); setEditTextError(""); }}
+                          onKeyDown={e => { if (e.key === "Enter") saveEdit(a.id); if (e.key === "Escape") cancelEdit(); }}
+                          maxLength={MAX_CHARS}
+                          className={`w-full text-sm border rounded-lg px-2.5 py-1.5 outline-none text-gray-700 ${editTextError ? "border-red-400 bg-red-50" : "bg-white border-blue-300 focus:border-blue-400"}`}
+                        />
+                        {editTextError && <p className="text-red-500 text-xs">{editTextError}</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus-within:border-blue-300 transition" style={{ width: "90px" }}>
+                        <ClockIcon />
+                        <input
+                          type="number"
+                          value={editMinutes}
+                          onChange={e => setEditMinutes(e.target.value)}
+                          placeholder="mins"
+                          min={0}
+                          max={9999}
+                          className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(a.id)} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">Save</button>
+                      <button onClick={cancelEdit} className="px-3 py-1 border border-gray-200 text-gray-500 text-xs font-medium rounded-lg hover:bg-gray-50 transition">Cancel</button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  /* ── View mode ── */
+                  <>
+                    {/* Activity name row */}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleDone(a.id)}
+                        className={`min-w-[20px] min-h-[20px] w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${a.is_completed ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 hover:border-blue-400"}`}
+                      >
+                        {a.is_completed && <CheckIcon />}
+                      </button>
+                      <span className={`flex-1 text-sm ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
+                        {a.name}
+                        {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
+                      </span>
+                    </div>
+
+                    {/* Action toolbar row */}
+                    <div className="flex items-center gap-1 mt-2.5 pt-2.5 border-t border-gray-100">
+                      <Tooltip text="Edit">
+                        <button onClick={() => startEdit(a)} className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition"><PencilIcon /></button>
+                      </Tooltip>
+                      <Tooltip text="Priority">
+                        <button onClick={() => togglePriority(a.id)} className={`p-1.5 rounded-lg transition ${a.is_priority ? "text-amber-500 bg-amber-50" : "text-gray-400 hover:text-amber-400 hover:bg-amber-50"}`}><StarIcon filled={a.is_priority} /></button>
+                      </Tooltip>
+                      <Tooltip text="Protect habit">
+                        <button onClick={() => toggleHabit(a.id)} className={`p-1.5 rounded-lg transition ${a.is_habit_to_protect ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-blue-500 hover:bg-blue-50"}`}><ShieldIcon filled={a.is_habit_to_protect} /></button>
+                      </Tooltip>
+
+                      {/* ── Inline editable minutes pill ── */}
+                      <div className="flex-1 flex justify-center">
+                        {minutesEditId === a.id ? (
+                          <div className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 focus-within:border-violet-400 transition" style={{ width: "88px" }}>
+                            <ClockIcon size={11} />
+                            <input
+                              autoFocus
+                              type="number"
+                              value={minutesEditVal}
+                              onChange={e => setMinutesEditVal(e.target.value)}
+                              onBlur={() => saveInlineMinutes(a.id)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") saveInlineMinutes(a.id);
+                                if (e.key === "Escape") setMinutesEditId(null);
+                              }}
+                              placeholder="mins"
+                              min={0}
+                              max={9999}
+                              className="w-full text-xs text-violet-700 font-medium outline-none bg-transparent placeholder-violet-300"
+                            />
+                          </div>
+                        ) : (
+                          <Tooltip text="Click to edit time">
+                            <button
+                              onClick={() => {
+                                setMinutesEditId(a.id);
+                                setMinutesEditVal(a.minutes_practised > 0 ? String(a.minutes_practised) : "");
+                              }}
+                              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium border transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600 ${
+                                a.minutes_practised > 0
+                                  ? "text-violet-600 bg-violet-50 border-violet-100"
+                                  : "text-gray-300 border-dashed border-gray-200 hover:text-violet-500"
+                              }`}
+                            >
+                              <ClockIcon size={11} />
+                              {a.minutes_practised > 0 ? formatMins(a.minutes_practised) : "add time"}
+                            </button>
+                          </Tooltip>
+                        )}
+                      </div>
+
+                      <Tooltip text="Delete">
+                        <button onClick={() => setDeleteTarget({ id: a.id })} className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"><TrashIcon /></button>
+                      </Tooltip>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -342,40 +573,55 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, showToast }) {
   );
 }
 
-// ── Skill Card (grid tile) ──
-function SkillCard({ skill, today, onClick }) {
+// ─── Skill Card ───────────────────────────────────────────────────────────────
+function SkillCard({ skill, today, activities, onClick }) {
   const firstActivity = skill.activities?.[0];
   const entryDate = firstActivity?.entry_date;
   const isFromYesterday = entryDate ? String(entryDate) !== today : false;
-  const total = skill.activities?.length || 0;
-  const done = skill.activities?.filter(a => a.is_completed).length || 0;
+
+  const liveActivities = activities ?? skill.activities ?? [];
+  const total = liveActivities.length;
+  const done = liveActivities.filter(a => a.is_completed).length;
   const allDone = total > 0 && done === total;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const totalMins = liveActivities.reduce((sum, a) => sum + (a.minutes_practised || 0), 0);
+  const formattedTime = formatMins(totalMins);
 
   return (
-    <button onClick={onClick}
-      className={`w-full text-left bg-white rounded-2xl border shadow-sm p-5 transition-all hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] ${allDone ? "border-blue-200" : isFromYesterday ? "border-amber-200" : "border-gray-100"}`}>
+    <button
+      onClick={onClick}
+      className={`w-full text-left bg-white rounded-2xl border shadow-sm p-5 transition-all hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] ${allDone ? "border-blue-200" : isFromYesterday ? "border-amber-200" : "border-gray-100"}`}
+    >
       <div className="flex items-start justify-between gap-2 mb-3">
         <h3 className={`text-sm font-semibold truncate leading-tight ${allDone ? "text-blue-700" : "text-gray-800"}`}>{skill.name}</h3>
         {allDone && <span className="shrink-0 text-blue-500"><BadgeCheckIcon /></span>}
       </div>
-      <div className="mb-2">
+      <div className="mb-3">
         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
           <div className={`h-full rounded-full transition-all ${allDone ? "bg-blue-500" : "bg-blue-400"}`} style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-gray-400">{done}/{total} done</span>
-        {isFromYesterday && !allDone && <span className="text-[10px] font-medium text-amber-500">carried over</span>}
-        {allDone && <span className="text-[10px] font-semibold text-blue-600">Complete!</span>}
+        <div className="flex items-center gap-1.5">
+          {/* Total time badge on card */}
+          {formattedTime && (
+            <span className="flex items-center gap-1 text-[10px] font-semibold text-violet-500 bg-violet-50 border border-violet-100 rounded-md px-1.5 py-0.5">
+              <ClockIcon size={10} />{formattedTime}
+            </span>
+          )}
+          {isFromYesterday && !allDone && <span className="text-[10px] font-medium text-amber-500">carried over</span>}
+          {allDone && <span className="text-[10px] font-semibold text-blue-600">Complete!</span>}
+        </div>
       </div>
     </button>
   );
 }
 
-// ── Main Page ──
+// ─── Main Page ────────────────────────────────────────────────────────────────
 function SkillPractice() {
   const [skills, setSkills] = useState([]);
+  const [skillActivities, setSkillActivities] = useState({});
   const [loading, setLoading] = useState(true);
   const [newSkillName, setNewSkillName] = useState("");
   const [skillNameError, setSkillNameError] = useState("");
@@ -400,17 +646,22 @@ function SkillPractice() {
         return { ...s, isFromYesterday, wasFullyCompleted };
       }).filter(s => !s.wasFullyCompleted);
       setSkills(mapped);
-    } catch (err) { console.error("Load skills failed:", err); }
-    finally { setLoading(false); }
+      const actMap = {};
+      mapped.forEach(s => { actMap[s.id] = s.activities || []; });
+      setSkillActivities(actMap);
+    } catch (err) {
+      console.error("Load skills failed:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const validateSkillName = (name) => {
     if (!name.trim()) { setSkillNameError("Skill name cannot be empty"); return false; }
-    if (name.trim().length < 2) { setSkillNameError("Skill name must be at least 2 characters"); return false; }
-    if (name.trim().length > 20) { setSkillNameError("Skill name cannot exceed 20 characters"); return false; }
-    // ✅ Check for duplicate skill name
-    const duplicate = skills.some(s => s.name.toLowerCase() === name.trim().toLowerCase());
-    if (duplicate) { setSkillNameError("A skill with this name already exists"); return false; }
+    if (name.trim().length < MIN_CHARS) { setSkillNameError(`Skill name must be at least ${MIN_CHARS} characters`); return false; }
+    if (name.trim().length > MAX_CHARS) { setSkillNameError(`Skill name cannot exceed ${MAX_CHARS} characters`); return false; }
+    const isDuplicate = skills.some(s => s.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if (isDuplicate) { setSkillNameError("A skill with this name already exists"); return false; }
     setSkillNameError(""); return true;
   };
 
@@ -420,6 +671,7 @@ function SkillPractice() {
       const res = await createSkillAPI({ name: newSkillName.trim() });
       const newSkill = { ...(res?.data || res), activities: [], isFromYesterday: false, wasFullyCompleted: false };
       setSkills(prev => [newSkill, ...prev]);
+      setSkillActivities(prev => ({ ...prev, [newSkill.id]: [] }));
       setNewSkillName(""); setSkillNameError("");
       showToast("Skill added!", "success");
     } catch (err) {
@@ -428,10 +680,13 @@ function SkillPractice() {
     }
   };
 
-  // ✅ When modal closes, update skill's activities in the grid
   const handleSkillUpdated = (id, patch) => {
     setSkills(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
     setSelectedSkill(prev => prev?.id === id ? { ...prev, ...patch } : prev);
+  };
+
+  const handleActivitiesChanged = (skillId, newActivities) => {
+    setSkillActivities(prev => ({ ...prev, [skillId]: newActivities }));
   };
 
   const openSkill = (skill) => setSelectedSkill(skill);
@@ -447,33 +702,46 @@ function SkillPractice() {
           today={today}
           onClose={closeSkill}
           onSkillUpdated={handleSkillUpdated}
+          onActivitiesChanged={handleActivitiesChanged}
           showToast={showToast}
         />
       )}
 
-      <Sidebar activePath="/skill-practice" onNavigate={(path) => closeSkill() || window.location.href = path} />
+      <Sidebar activePath="/skill-practice" />
 
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="px-10 pt-8 pb-4 shrink-0">
           <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Skill Practice</p>
           <h1 className="text-2xl font-bold text-gray-800 leading-tight">What are you building today?</h1>
-          <p className="text-gray-400 text-sm mt-1">Click a skill card to manage its activities</p>
+          <p className="text-gray-400 text-sm mt-1">Track your skills and the activities within each one</p>
         </div>
 
         <div className="px-10 pb-4 shrink-0">
-          <div className="flex gap-2 max-w-sm">
-            <div className="flex-1 flex flex-col gap-1">
-              <input value={newSkillName}
-                onChange={e => { setNewSkillName(e.target.value); if (skillNameError) setSkillNameError(""); }}
-                onKeyDown={e => e.key === "Enter" && addSkill()}
-                placeholder="Add a new skill..." maxLength={20}
-                className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition shadow-sm ${skillNameError ? "border-red-300 focus:border-red-400 bg-red-50" : "border-gray-200 focus:border-blue-300"}`}
-              />
-              {skillNameError && <p className="text-red-500 text-xs font-medium pl-1">{skillNameError}</p>}
+          {/* Add skill input + stats strip on same row */}
+          <div className="flex items-start gap-4 flex-wrap">
+            <div className="flex gap-2 max-w-sm">
+              <div className="flex-1 flex flex-col gap-1">
+                <input
+                  value={newSkillName}
+                  onChange={e => { setNewSkillName(e.target.value); if (skillNameError) setSkillNameError(""); }}
+                  onKeyDown={e => e.key === "Enter" && addSkill()}
+                  placeholder="Add a new skill..."
+                  maxLength={MAX_CHARS}
+                  className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition shadow-sm ${skillNameError ? "border-red-300 focus:border-red-400 bg-red-50" : "border-gray-200 focus:border-blue-300"}`}
+                />
+                {skillNameError && <p className="text-red-500 text-xs font-medium pl-1">{skillNameError}</p>}
+              </div>
+              <button onClick={addSkill} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm flex items-center gap-1.5 self-start">
+                <PlusIcon /> Add Skill
+              </button>
             </div>
-            <button onClick={addSkill} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition shadow-sm flex items-center gap-1.5 self-start">
-              <PlusIcon />Add Skill
-            </button>
+
+            {/* Stats strip — only shown when there are skills */}
+            {!loading && (
+              <div className="flex items-center self-start mt-0.5">
+                <StatsStrip skills={skills} skillActivities={skillActivities} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -489,7 +757,13 @@ function SkillPractice() {
           ) : (
             <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
               {skills.map(skill => (
-                <SkillCard key={skill.id} skill={skill} today={today} onClick={() => openSkill(skill)} />
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  today={today}
+                  activities={skillActivities[skill.id]}
+                  onClick={() => openSkill(skill)}
+                />
               ))}
             </div>
           )}

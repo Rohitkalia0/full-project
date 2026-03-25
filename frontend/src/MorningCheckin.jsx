@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { createMorningAPI, updateMorningAPI, addActivityAPI, deleteActivityAPI, getMorningAPI } from "./api";
 import Sidebar from "./Sidebar";
@@ -88,7 +88,6 @@ function MorningCheckin() {
 
   const checkinIdRef = useRef(null);
   const confidenceRef = useRef(2);
-  const isCreatingRef = useRef(false);
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
@@ -133,43 +132,29 @@ function MorningCheckin() {
     } finally { setPageReady(true); }
   };
 
-  const getOrCreateCheckin = async () => {
+  const ensureCheckinId = async () => {
     if (checkinIdRef.current) return checkinIdRef.current;
-    if (isCreatingRef.current) {
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 150));
-        if (checkinIdRef.current) return checkinIdRef.current;
-      }
-      throw new Error("Timed out");
-    }
-    isCreatingRef.current = true;
+    // Check if today's morning already exists (e.g. created in a prior session)
+    const today = new Date().toISOString().split("T")[0];
     try {
-      const today = new Date().toISOString().split("T")[0];
-      try {
-        const res = await getMorningAPI(today);
-        const data = parseMorningData(res);
-        if (data?.id) { applyMorningData(data, today); return checkinIdRef.current; }
-      } catch { }
-      const res = await createMorningAPI({ confidence_rating: confidenceRef.current, activities: [] });
+      const res = await getMorningAPI(today);
       const data = parseMorningData(res);
-      if (!data?.id) throw new Error("No ID in create response");
-      checkinIdRef.current = data.id;
-      setSavedConfidence(confidenceRef.current);
-      return data.id;
-    } catch (err) {
-      try {
-        const today = new Date().toISOString().split("T")[0];
-        const res = await getMorningAPI(today);
-        const data = parseMorningData(res);
-        if (data?.id) { applyMorningData(data, today); return checkinIdRef.current; }
-      } catch { }
-      throw err;
-    } finally { isCreatingRef.current = false; }
+      if (data?.id) {
+        const dataDate = String(data.date ?? "").split("T")[0];
+        if (dataDate === today) {
+          checkinIdRef.current = data.id;
+          return data.id;
+        }
+      }
+    } catch { /* no morning yet */ }
+    return null;
   };
 
   // Add activity locally only — no API call yet
   const addActivity = () => {
     if (!newActivity.trim()) { setNewActivityError("Activity name cannot be empty"); return; }
+    if (newActivity.trim().length < 2) { setNewActivityError("Activity must be at least 2 characters"); return; }
+    if (newActivity.trim().length > 2000) { setNewActivityError("Activity cannot exceed 2000 characters"); return; }
     setNewActivityError("");
     const tempId = `new-${Date.now()}`;
     setActivities(prev => [...prev, {
@@ -184,8 +169,19 @@ function MorningCheckin() {
   const toggleProtect = (id) => setActivities(prev => prev.map(a => ({ ...a, protect: a.id === id ? !a.protect : false })));
 
   const confirmDelete = (id) => setDeleteTarget(id);
-  const doDelete = () => {
+  const doDelete = async () => {
+    const target = activities.find(a => a.id === deleteTarget);
+    if (target && !target.isNew && target.realId) {
+      try {
+        await deleteActivityAPI(target.realId);
+      } catch (err) {
+        showToast(err.message || "Failed to delete activity", "error");
+        setDeleteTarget(null);
+        return;
+      }
+    }
     setActivities(prev => prev.filter(a => a.id !== deleteTarget));
+    setSavedActivities(prev => prev.filter(a => a.id !== deleteTarget));
     setDeleteTarget(null);
   };
 
@@ -196,48 +192,77 @@ function MorningCheckin() {
   };
 
   const handleSave = async () => {
-    if (!hasChanges) return;
+    if (!hasChanges) return true;
     setLoading(true);
     try {
-      const id = await getOrCreateCheckin();
+      const id = await ensureCheckinId();
 
-      // Save new activities first
-      const newActivities = activities.filter(a => a.isNew);
-      const savedNew = [];
-      for (const a of newActivities) {
-        const res = await addActivityAPI(id, { title: a.text, is_priority: a.priority, is_habit: a.protect });
-        const d = res?.data ?? res;
-        savedNew.push({ ...a, id: d.id, realId: d.id, isNew: false });
-      }
-
-      // Build final activities list with real IDs
-      const finalActivities = activities.map(a => {
-        if (a.isNew) {
-          const saved = savedNew.find(s => s.text === a.text);
-          return saved || a;
-        }
-        return a;
-      });
-
-      // PATCH existing activities
-      const existingToUpdate = finalActivities.filter(a => !a.isNew && !a.isCarriedOver && a.realId);
-      if (existingToUpdate.length > 0) {
-        await updateMorningAPI(id, {
+      if (!id) {
+        // FIRST TIME: Create morning with all activities in one POST
+        const res = await createMorningAPI({
           confidence_rating: Number(confidence),
-          activities: existingToUpdate.map(a => ({
-            id: a.realId, is_completed: a.done, is_priority: a.priority, is_habit: a.protect
+          activities: activities.map(a => ({
+            title: a.text, is_priority: a.priority, is_habit: a.protect
           }))
         });
+        const data = parseMorningData(res);
+        if (!data?.id) throw new Error("Failed to create morning");
+        checkinIdRef.current = data.id;
+
+        // Sync local state from the POST response directly
+        const returned = data.activities || [];
+        const synced = returned.map(a => ({
+          id: a.id, realId: a.id, text: a.title,
+          done: a.is_completed ?? false,
+          priority: a.is_priority ?? false,
+          protect: a.is_habit ?? false,
+          isCarriedOver: false, isNew: false
+        }));
+        setActivities(synced);
+        setSavedActivities(synced.map(a => ({ ...a })));
+        setSavedConfidence(Number(data.confidence_rating) || confidence);
+        setIsFromYesterday(false);
       } else {
-        await updateMorningAPI(id, { confidence_rating: Number(confidence) });
+        // SUBSEQUENT: POST new activities, then PATCH all existing
+        const newActs = activities.filter(a => a.isNew);
+        const savedNewMap = new Map();
+        for (const a of newActs) {
+          const res = await addActivityAPI(id, { title: a.text, is_priority: a.priority, is_habit: a.protect });
+          const d = res?.data ?? res;
+          savedNewMap.set(a.id, { id: d.id, realId: d.id, isNew: false });
+        }
+
+        // PATCH existing activities
+        const existingToUpdate = activities.filter(a => !a.isNew && !a.isCarriedOver && a.realId);
+        if (existingToUpdate.length > 0) {
+          await updateMorningAPI(id, {
+            confidence_rating: Number(confidence),
+            activities: existingToUpdate.map(a => ({
+              id: a.realId, is_completed: a.done, is_priority: a.priority, is_habit: a.protect
+            }))
+          });
+        } else {
+          await updateMorningAPI(id, { confidence_rating: Number(confidence) });
+        }
+
+        // Sync local state — merge saved new activity IDs into current state
+        const synced = activities.map(a => {
+          if (a.isNew && savedNewMap.has(a.id)) {
+            return { ...a, ...savedNewMap.get(a.id) };
+          }
+          return { ...a, isNew: false };
+        });
+        setActivities(synced);
+        setSavedActivities(synced.map(a => ({ ...a })));
+        setSavedConfidence(confidence);
       }
 
-      setActivities(finalActivities);
-      setSavedActivities(finalActivities);
-      setSavedConfidence(confidence);
       showToast("Saved!", "success");
-    } catch (err) { showToast(err.message || "Something went wrong", "error"); }
-    finally { setLoading(false); }
+      return true;
+    } catch (err) {
+      showToast(err.message || "Something went wrong", "error");
+      return false;
+    } finally { setLoading(false); }
   };
 
   // Navigate with unsaved check
@@ -247,8 +272,8 @@ function MorningCheckin() {
       setUnsavedModal({
         onSave: async () => {
           setUnsavedModal(null);
-          await handleSave();
-          navigate(pendingNavRef.current);
+          const saved = await handleSave();
+          if (saved) navigate(pendingNavRef.current);
         },
         onDiscard: () => { setUnsavedModal(null); navigate(pendingNavRef.current); },
         onCancel: () => { setUnsavedModal(null); pendingNavRef.current = null; }
@@ -261,12 +286,6 @@ function MorningCheckin() {
   const confidenceLabels = ["", "Low", "Fair", "Good", "Great", "Excellent"];
   const sliderPct = ((confidence - 1) / 4) * 100;
 
-  if (!pageReady) return (
-    <div className="flex h-screen items-center justify-center" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
       {deleteTarget && <DeleteModal onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />}
@@ -275,7 +294,11 @@ function MorningCheckin() {
 
       <Sidebar activePath="/morning-checkin" onNavigate={handleNavigate} />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      {!pageReady ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : <main className="flex-1 flex flex-col overflow-hidden">
         <div className="px-10 pt-8 pb-4 shrink-0">
           <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Morning Check-in</p>
           <h1 className="text-2xl font-bold text-gray-800 leading-tight">What matters today?</h1>
@@ -318,11 +341,15 @@ function MorningCheckin() {
               <label className="block text-sm font-semibold text-gray-700 mb-3">Morning Activities</label>
               <div className="flex gap-2 mb-4">
                 <div className="flex-1 flex flex-col gap-1">
-                  <input value={newActivity}
+                  <textarea value={newActivity}
                     onChange={(e) => { setNewActivity(e.target.value); if (newActivityError) setNewActivityError(""); }}
-                    onKeyDown={(e) => e.key === "Enter" && addActivity()}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addActivity(); } }}
                     placeholder="Add a new activity..."
-                    className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-gray-50 border-gray-200 focus:border-blue-300 focus:bg-white"}`}
+                    maxLength={2000}
+                    rows={1}
+                    style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
+                    onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                    className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition min-h-[40px] ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-gray-50 border-gray-200 focus:border-blue-300 focus:bg-white"}`}
                   />
                   {newActivityError && <p className="text-red-500 text-xs font-medium pl-1">{newActivityError}</p>}
                 </div>
@@ -335,17 +362,20 @@ function MorningCheckin() {
               <div className="flex flex-col gap-2">
                 {activities.map((a) => (
                   <div key={a.id} className={`flex items-center justify-between px-3.5 py-3 rounded-xl border transition-all ${a.done ? "bg-gray-50 border-gray-100" : a.isCarriedOver ? "bg-amber-50 border-amber-100" : a.isNew ? "bg-blue-50 border-blue-100" : "bg-white border-gray-200"}`}>
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
                       <button onClick={() => toggleDone(a.id)}
-                        className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${a.done ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 hover:border-blue-400"}`}>
+                        className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${a.done ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 hover:border-blue-400"}`}>
                         {a.done && <CheckIcon />}
                       </button>
                       {editingId === a.id ? (
-                        <input autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
-                          onBlur={() => saveEdit(a.id)} onKeyDown={(e) => e.key === "Enter" && saveEdit(a.id)}
-                          className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-2 py-1 outline-none text-gray-700" />
+                        <textarea autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                          onBlur={() => saveEdit(a.id)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(a.id); } }}
+                          rows={1}
+                          style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
+                          onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                          className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-2 py-1 outline-none text-gray-700 min-h-[28px]" />
                       ) : (
-                        <span className={`text-sm truncate ${a.done ? "line-through text-gray-400" : "text-gray-700"}`}>
+                        <span className={`text-sm break-words whitespace-pre-wrap ${a.done ? "line-through text-gray-400" : "text-gray-700"}`}>
                           {a.text}
                           {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                           {a.isNew && <span className="ml-2 text-[10px] text-blue-500 font-medium">unsaved</span>}
@@ -373,7 +403,7 @@ function MorningCheckin() {
             </button>
           </div>
         </div>
-      </main>
+      </main>}
     </div>
   );
 }

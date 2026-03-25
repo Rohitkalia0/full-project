@@ -1,10 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { updateUserAPI, uploadPhotoAPI, getSettingAPI, updateSettingAPI, getUserAPI } from "./api";
+import { updateUserAPI, uploadPhotoAPI, getSettingAPI, updateSettingAPI, getUserAPI,removePhotoAPI } from "./api";
 import Sidebar from "./Sidebar";
 
 const PencilIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);
 const DefaultAvatar = () => (<svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full"><rect width="128" height="128" fill="#e5e7eb"/><circle cx="64" cy="49" r="22" fill="#9ca3af"/><ellipse cx="64" cy="103" rx="36" ry="22" fill="#9ca3af"/></svg>);
+
+// Helper — update localStorage AND fire storage event so Sidebar refreshes
+const setLocalStorageItem = (key, value) => {
+  localStorage.setItem(key, value);
+  window.dispatchEvent(new Event("storage"));
+};
+
+const removeLocalStorageItem = (key) => {
+  localStorage.removeItem(key);
+  window.dispatchEvent(new Event("storage"));
+};
 
 function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
@@ -76,11 +87,9 @@ function Settings() {
   const pendingNavRef = useRef(null);
   const [pageReady, setPageReady] = useState(false);
 
-  // All data from API — no localStorage
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [photoUrl, setPhotoUrl] = useState(null);
-  const [email, setEmail] = useState(localStorage.getItem("user_email") || "");
+  const [firstName, setFirstName] = useState(localStorage.getItem("first_name") || "");
+  const [lastName, setLastName] = useState(localStorage.getItem("last_name") || "");
+  const [photoUrl, setPhotoUrl] = useState(localStorage.getItem("photo_url") || null);
   const [rhythm, setRhythm] = useState({ morningStart: "", morningEnd: "", eveningStart: "", eveningEnd: "" });
 
   const [editing, setEditing] = useState(false);
@@ -100,32 +109,34 @@ function Settings() {
 
   const loadAll = async () => {
     try {
-      const [settingRes, userRes] = await Promise.all([getSettingAPI(), getUserAPI()]);
-
-      const d = settingRes?.data ?? settingRes;
+      const res = await getSettingAPI();
+      const d = res?.data ?? res;
       setRhythm({
         morningStart: toInputTime(d.morning_start_time),
         morningEnd: toInputTime(d.morning_end_time),
         eveningStart: toInputTime(d.evening_start_time),
         eveningEnd: toInputTime(d.evening_end_time),
       });
+    } catch (err) { console.error("loadSettings failed:", err.message); }
 
-      const u = userRes?.data ?? userRes;
-      setFirstName(u.first_name || "");
-      setLastName(u.last_name || "");
-      setEmail(u.email || localStorage.getItem("user_email") || "");
-      if (u.profile_pic_url) setPhotoUrl(u.profile_pic_url);
+    try {
+      const userRes = await getUserAPI();
+      const user = userRes?.data ?? userRes;
+      if (user?.first_name) {
+        setFirstName(user.first_name);
+        setLocalStorageItem("first_name", user.first_name);
+      }
+      if (user?.last_name) {
+        setLastName(user.last_name);
+        setLocalStorageItem("last_name", user.last_name);
+      }
+      if (user?.profile_pic_url) {
+        setPhotoUrl(user.profile_pic_url);
+        setLocalStorageItem("photo_url", user.profile_pic_url);
+      }
+    } catch (err) { console.error("loadUser failed:", err.message); }
 
-      // Sync sidebar localStorage
-      if (u.first_name) localStorage.setItem("first_name", u.first_name);
-      if (u.last_name) localStorage.setItem("last_name", u.last_name);
-      if (u.profile_pic_url) localStorage.setItem("photo_url", u.profile_pic_url);
-
-    } catch (err) {
-      console.error("loadAll failed:", err.message);
-    } finally {
-      setPageReady(true);
-    }
+    setPageReady(true);
   };
 
   const hasChanges = editing && (
@@ -159,45 +170,55 @@ function Settings() {
     return errs;
   };
 
+  const doSaveAll = async () => {
+    if (!tempFirstName.trim() || tempFirstName.trim().length < 2) { showToast("First name must be at least 2 characters", "error"); return false; }
+    if (tempFirstName.trim().length > 20) { showToast("First name cannot exceed 20 characters", "error"); return false; }
+    if (tempLastName.trim() && tempLastName.trim().length < 2) { showToast("Last name must be at least 2 characters", "error"); return false; }
+    if (tempLastName.trim().length > 20) { showToast("Last name cannot exceed 20 characters", "error"); return false; }
+    const errs = validateRhythm(tempRhythm);
+    if (Object.keys(errs).length > 0) { setRhythmErrors(errs); return false; }
+
+    try {
+      if (tempFirstName.trim() !== firstName || tempLastName.trim() !== lastName) {
+        const payload = { first_name: tempFirstName.trim() };
+        if (tempLastName.trim()) payload.last_name = tempLastName.trim();
+        await updateUserAPI(payload);
+        setFirstName(tempFirstName.trim());
+        setLastName(tempLastName.trim());
+        setLocalStorageItem("first_name", tempFirstName.trim());
+        setLocalStorageItem("last_name", tempLastName.trim());
+      }
+      const rhythmChanged =
+        tempRhythm.morningStart !== rhythm.morningStart ||
+        tempRhythm.morningEnd !== rhythm.morningEnd ||
+        tempRhythm.eveningStart !== rhythm.eveningStart ||
+        tempRhythm.eveningEnd !== rhythm.eveningEnd;
+      if (rhythmChanged) {
+        await updateSettingAPI({
+          morning_start_time: toApiTime(tempRhythm.morningStart),
+          morning_end_time: toApiTime(tempRhythm.morningEnd),
+          evening_start_time: toApiTime(tempRhythm.eveningStart),
+          evening_end_time: toApiTime(tempRhythm.eveningEnd),
+        });
+        setRhythm({ ...tempRhythm });
+      }
+      setEditing(false);
+      showToast("Settings updated", "success");
+      return true;
+    } catch (err) { showToast(err.message || "Failed to update", "error"); return false; }
+  };
+
   const requestSaveAll = () => {
     if (!tempFirstName.trim() || tempFirstName.trim().length < 2) { showToast("First name must be at least 2 characters", "error"); return; }
+    if (tempFirstName.trim().length > 20) { showToast("First name cannot exceed 20 characters", "error"); return; }
+    if (tempLastName.trim() && tempLastName.trim().length < 2) { showToast("Last name must be at least 2 characters", "error"); return; }
+    if (tempLastName.trim().length > 20) { showToast("Last name cannot exceed 20 characters", "error"); return; }
     const errs = validateRhythm(tempRhythm);
     if (Object.keys(errs).length > 0) { setRhythmErrors(errs); return; }
     setConfirmModal({
       title: "Save Changes?",
       message: "Update your profile and daily rhythm settings?",
-      onConfirm: async () => {
-        setConfirmModal(null);
-        try {
-          const nameChanged = tempFirstName.trim() !== firstName || tempLastName.trim() !== lastName;
-          if (nameChanged) {
-            const payload = { first_name: tempFirstName.trim() };
-            if (tempLastName.trim()) payload.last_name = tempLastName.trim();
-            await updateUserAPI(payload);
-            setFirstName(tempFirstName.trim());
-            setLastName(tempLastName.trim());
-            // Sync sidebar
-            localStorage.setItem("first_name", tempFirstName.trim());
-            localStorage.setItem("last_name", tempLastName.trim());
-          }
-          const rhythmChanged =
-            tempRhythm.morningStart !== rhythm.morningStart ||
-            tempRhythm.morningEnd !== rhythm.morningEnd ||
-            tempRhythm.eveningStart !== rhythm.eveningStart ||
-            tempRhythm.eveningEnd !== rhythm.eveningEnd;
-          if (rhythmChanged) {
-            await updateSettingAPI({
-              morning_start_time: toApiTime(tempRhythm.morningStart),
-              morning_end_time: toApiTime(tempRhythm.morningEnd),
-              evening_start_time: toApiTime(tempRhythm.eveningStart),
-              evening_end_time: toApiTime(tempRhythm.eveningEnd),
-            });
-            setRhythm({ ...tempRhythm });
-          }
-          setEditing(false);
-          showToast("Settings updated", "success");
-        } catch (err) { showToast(err.message || "Failed to update", "error"); }
-      }
+      onConfirm: async () => { setConfirmModal(null); await doSaveAll(); }
     });
   };
 
@@ -215,7 +236,7 @@ function Settings() {
           const photoData = res?.data ?? res;
           const url = photoData?.profile_pic_url ?? preview;
           setPhotoUrl(url);
-          localStorage.setItem("photo_url", url);
+          setLocalStorageItem("photo_url", url);  // fires storage event → Sidebar updates
           showToast("Profile picture updated", "success");
         } catch (err) { showToast(err.message || "Failed to upload", "error"); }
       }
@@ -223,35 +244,52 @@ function Settings() {
     e.target.value = "";
   };
 
+  // const handleRemovePhoto = () => {
+  //   setConfirmModal({
+  //     title: "Remove Profile Picture?",
+  //     message: "Your profile picture will be removed.",
+  //     onConfirm: async () => {
+  //       setConfirmModal(null);
+  //       // 1. Clear state immediately so the avatar on THIS page disappears
+  //       setPhotoUrl(null);
+  //       // 2. Remove from localStorage AND fire storage event so Sidebar re-reads immediately
+  //       removeLocalStorageItem("photo_url");
+  //       showToast("Profile picture removed", "success");
+  //     }
+  //   });
+  // };
   const handleRemovePhoto = () => {
-    setConfirmModal({
-      title: "Remove Profile Picture?",
-      message: "Your profile picture will be removed.",
-      onConfirm: async () => {
-        setConfirmModal(null);
+  setConfirmModal({
+    title: "Remove Profile Picture?",
+    message: "Your profile picture will be removed.",
+    onConfirm: async () => {
+      setConfirmModal(null);
+      try {
+        await removePhotoAPI();
         setPhotoUrl(null);
         localStorage.removeItem("photo_url");
         showToast("Profile picture removed", "success");
+      } catch (err) {
+        showToast(err.message || "Failed to remove", "error");
       }
-    });
-  };
+    }
+  });
+};
 
   const handleNavigate = (path) => {
     if (hasChanges) {
       pendingNavRef.current = path;
       setUnsavedModal({
-        onSave: async () => { setUnsavedModal(null); requestSaveAll(); },
+        onSave: async () => {
+          setUnsavedModal(null);
+          const ok = await doSaveAll();
+          if (ok) navigate(pendingNavRef.current);
+        },
         onDiscard: () => { setUnsavedModal(null); setEditing(false); navigate(pendingNavRef.current); },
         onCancel: () => { setUnsavedModal(null); pendingNavRef.current = null; }
       });
     } else { navigate(path); }
   };
-
-  if (!pageReady) return (
-    <div className="flex h-screen items-center justify-center" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
-      <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
 
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
@@ -262,158 +300,180 @@ function Settings() {
 
       <Sidebar activePath="/settings" onNavigate={handleNavigate} />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-10 pt-8 pb-4 shrink-0 flex items-start justify-between">
-          <div>
+      {!pageReady ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
+        <main className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-10 pt-8 pb-4 shrink-0">
             <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Settings</p>
             <h1 className="text-2xl font-bold text-gray-800 leading-tight">Your Profile</h1>
             <p className="text-gray-400 text-sm mt-1">Manage your account and preferences</p>
           </div>
-          <div className="flex gap-2 mt-2">
-            {editing ? (
-              <>
-                <button onClick={cancelEdit} className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-500 hover:bg-gray-50 transition">Cancel</button>
-                <button onClick={requestSaveAll} disabled={!hasChanges}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition shadow-sm ${hasChanges ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-blue-200 text-blue-100 cursor-not-allowed"}`}>
-                  Save Changes
-                </button>
-              </>
-            ) : (
-              <button onClick={startEdit} className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:border-blue-300 hover:text-blue-600 transition">
-                <PencilIcon />Edit All
-              </button>
-            )}
-          </div>
-        </div>
 
-        <div className="flex-1 overflow-y-auto px-10 pb-10">
-          <div className="max-w-2xl flex flex-col gap-4">
+          <div className="flex-1 overflow-y-auto px-10 pb-10">
+            <div className="max-w-2xl flex flex-col gap-4">
 
-            {/* Profile Picture */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Profile</p>
-              <div className="flex items-center gap-5">
-                <div className="relative shrink-0">
-                  <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-gray-200">
-                    {photoUrl ? <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" /> : <DefaultAvatar />}
-                  </div>
-                  <label className="absolute bottom-0 right-0 w-7 h-7 bg-blue-600 hover:bg-blue-700 rounded-full flex items-center justify-center cursor-pointer shadow-md transition">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-                      <circle cx="12" cy="13" r="4"/>
-                    </svg>
-                    <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
-                  </label>
+              {/* ── Profile Picture card — Edit button top-right ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 relative">
+                <div className="absolute top-4 right-5 flex gap-2">
+                  {editing ? (
+                    <>
+                      <button onClick={cancelEdit}
+                        className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-500 hover:bg-gray-50 transition">
+                        Cancel
+                      </button>
+                      <button onClick={requestSaveAll} disabled={!hasChanges}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${hasChanges ? "bg-blue-600 hover:bg-blue-700 text-white" : "bg-blue-200 text-blue-100 cursor-not-allowed"}`}>
+                        Save
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={startEdit}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 hover:border-blue-300 hover:text-blue-600 transition">
+                      <PencilIcon /> Edit
+                    </button>
+                  )}
                 </div>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-semibold text-gray-800">{[firstName, lastName].filter(Boolean).join(" ") || "Your Name"}</p>
-                  <p className="text-xs text-gray-400">{email}</p>
-                  <div className="flex gap-2 mt-1">
-                    {photoUrl ? (
-                      <>
-                        <button onClick={() => setShowPhotoModal(true)} className="text-xs text-blue-600 hover:underline">View photo</button>
-                        <span className="text-gray-300">·</span>
-                        <button onClick={handleRemovePhoto} className="text-xs text-red-500 hover:underline">Remove</button>
-                      </>
+
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Profile Picture</p>
+                <div className="flex items-center gap-5">
+                  <div className="relative shrink-0">
+                    <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-gray-200">
+                      {photoUrl
+                        ? <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" />
+                        : <DefaultAvatar />
+                      }
+                    </div>
+                    <label className="absolute bottom-0 right-0 w-7 h-7 bg-blue-600 hover:bg-blue-700 rounded-full flex items-center justify-center cursor-pointer shadow-md transition">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                        <circle cx="12" cy="13" r="4"/>
+                      </svg>
+                      <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-sm font-medium text-gray-700">
+                      {[firstName, lastName].filter(Boolean).join(" ") || "Your Name"}
+                    </p>
+                    <p className="text-xs text-gray-400">{localStorage.getItem("user_email") || ""}</p>
+                    <div className="flex gap-2 mt-1">
+                      {photoUrl ? (
+                        <>
+                          <button onClick={() => setShowPhotoModal(true)} className="text-xs text-blue-600 hover:underline">View photo</button>
+                          <span className="text-gray-300">·</span>
+                          <button onClick={handleRemovePhoto} className="text-xs text-red-500 hover:underline">Remove</button>
+                        </>
+                      ) : (
+                        <p className="text-xs text-gray-400">Click camera icon to upload</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Name card ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Name</p>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">First Name</label>
+                    {editing ? (
+                      <input autoFocus value={tempFirstName} onChange={e => setTempFirstName(e.target.value)}
+                        placeholder="Enter first name" maxLength={20}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-300 focus:bg-white transition" />
                     ) : (
-                      <p className="text-xs text-gray-400">Click camera to upload</p>
+                      <p className="text-gray-800 text-sm font-medium">{firstName || <span className="text-gray-300 font-normal">Not set</span>}</p>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                      Last Name <span className="text-gray-300">(optional)</span>
+                    </label>
+                    {editing ? (
+                      <input value={tempLastName} onChange={e => setTempLastName(e.target.value)}
+                        placeholder="Enter last name" maxLength={20}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-300 focus:bg-white transition" />
+                    ) : (
+                      <p className="text-gray-800 text-sm font-medium">{lastName || <span className="text-gray-300 font-normal">Not set</span>}</p>
                     )}
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Name */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Name</p>
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5">First Name</label>
-                  {editing ? (
-                    <input autoFocus value={tempFirstName} onChange={e => setTempFirstName(e.target.value)}
-                      placeholder="Enter first name"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-300 focus:bg-white transition" />
-                  ) : (
-                    <p className="text-gray-800 text-sm font-medium">{firstName || <span className="text-gray-300 font-normal">Not set</span>}</p>
-                  )}
-                </div>
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-500 mb-1.5">Last Name <span className="text-gray-300">(optional)</span></label>
-                  {editing ? (
-                    <input value={tempLastName} onChange={e => setTempLastName(e.target.value)}
-                      placeholder="Enter last name"
-                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-300 focus:bg-white transition" />
-                  ) : (
-                    <p className="text-gray-800 text-sm font-medium">{lastName || <span className="text-gray-300 font-normal">Not set</span>}</p>
-                  )}
-                </div>
+              {/* ── Daily Rhythm card ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Daily Rhythm</p>
+                <p className="text-xs text-gray-400 mb-4">Your morning and evening check-in windows</p>
+
+                {editing ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-amber-600 mb-3">Morning Block</p>
+                      <div className="flex flex-col gap-2">
+                        <div>
+                          <label className="text-[10px] font-medium text-amber-600 mb-1 block">Start Time</label>
+                          <input type="time" value={tempRhythm.morningStart}
+                            onChange={e => { setTempRhythm(p => ({ ...p, morningStart: e.target.value })); setRhythmErrors(p => ({ ...p, morningStart: "" })); }}
+                            className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.morningStart ? "border-red-400" : "border-amber-200 focus:border-amber-400"}`} />
+                          {rhythmErrors.morningStart && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.morningStart}</p>}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-amber-600 mb-1 block">End Time</label>
+                          <input type="time" value={tempRhythm.morningEnd}
+                            onChange={e => { setTempRhythm(p => ({ ...p, morningEnd: e.target.value })); setRhythmErrors(p => ({ ...p, morningEnd: "" })); }}
+                            className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.morningEnd ? "border-red-400" : "border-amber-200 focus:border-amber-400"}`} />
+                          {rhythmErrors.morningEnd && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.morningEnd}</p>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-indigo-600 mb-3">Evening Block</p>
+                      <div className="flex flex-col gap-2">
+                        <div>
+                          <label className="text-[10px] font-medium text-indigo-500 mb-1 block">Start Time</label>
+                          <input type="time" value={tempRhythm.eveningStart}
+                            onChange={e => { setTempRhythm(p => ({ ...p, eveningStart: e.target.value })); setRhythmErrors(p => ({ ...p, eveningStart: "" })); }}
+                            className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.eveningStart ? "border-red-400" : "border-indigo-200 focus:border-indigo-400"}`} />
+                          {rhythmErrors.eveningStart && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.eveningStart}</p>}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-medium text-indigo-500 mb-1 block">End Time</label>
+                          <input type="time" value={tempRhythm.eveningEnd}
+                            onChange={e => { setTempRhythm(p => ({ ...p, eveningEnd: e.target.value })); setRhythmErrors(p => ({ ...p, eveningEnd: "" })); }}
+                            className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.eveningEnd ? "border-red-400" : "border-indigo-200 focus:border-indigo-400"}`} />
+                          {rhythmErrors.eveningEnd && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.eveningEnd}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-amber-600 mb-2">Morning Block</p>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">Start</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.morningStart)}</span></div>
+                        <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">End</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.morningEnd)}</span></div>
+                      </div>
+                    </div>
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                      <p className="text-xs font-semibold text-indigo-600 mb-2">Evening Block</p>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">Start</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.eveningStart)}</span></div>
+                        <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">End</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.eveningEnd)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
 
-            {/* Daily Rhythm */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">Daily Rhythm</p>
-              <p className="text-xs text-gray-400 mb-4">Your morning and evening check-in windows</p>
-              {editing ? (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-amber-600 mb-3">Morning Block</p>
-                    <div className="flex flex-col gap-2">
-                      <div>
-                        <label className="text-[10px] font-medium text-amber-600 mb-1 block">Start Time</label>
-                        <input type="time" value={tempRhythm.morningStart} onChange={e => { setTempRhythm(p => ({ ...p, morningStart: e.target.value })); setRhythmErrors(p => ({ ...p, morningStart: "" })); }}
-                          className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.morningStart ? "border-red-400" : "border-amber-200 focus:border-amber-400"}`} />
-                        {rhythmErrors.morningStart && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.morningStart}</p>}
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-medium text-amber-600 mb-1 block">End Time</label>
-                        <input type="time" value={tempRhythm.morningEnd} onChange={e => { setTempRhythm(p => ({ ...p, morningEnd: e.target.value })); setRhythmErrors(p => ({ ...p, morningEnd: "" })); }}
-                          className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.morningEnd ? "border-red-400" : "border-amber-200 focus:border-amber-400"}`} />
-                        {rhythmErrors.morningEnd && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.morningEnd}</p>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-indigo-600 mb-3">Evening Block</p>
-                    <div className="flex flex-col gap-2">
-                      <div>
-                        <label className="text-[10px] font-medium text-indigo-500 mb-1 block">Start Time</label>
-                        <input type="time" value={tempRhythm.eveningStart} onChange={e => { setTempRhythm(p => ({ ...p, eveningStart: e.target.value })); setRhythmErrors(p => ({ ...p, eveningStart: "" })); }}
-                          className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.eveningStart ? "border-red-400" : "border-indigo-200 focus:border-indigo-400"}`} />
-                        {rhythmErrors.eveningStart && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.eveningStart}</p>}
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-medium text-indigo-500 mb-1 block">End Time</label>
-                        <input type="time" value={tempRhythm.eveningEnd} onChange={e => { setTempRhythm(p => ({ ...p, eveningEnd: e.target.value })); setRhythmErrors(p => ({ ...p, eveningEnd: "" })); }}
-                          className={`w-full p-2.5 bg-white border rounded-xl text-sm text-gray-700 outline-none transition cursor-pointer ${rhythmErrors.eveningEnd ? "border-red-400" : "border-indigo-200 focus:border-indigo-400"}`} />
-                        {rhythmErrors.eveningEnd && <p className="text-red-500 text-[10px] mt-1">{rhythmErrors.eveningEnd}</p>}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-amber-600 mb-2">Morning Block</p>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">Start</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.morningStart)}</span></div>
-                      <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">End</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.morningEnd)}</span></div>
-                    </div>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-indigo-600 mb-2">Evening Block</p>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">Start</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.eveningStart)}</span></div>
-                      <div className="flex items-center justify-between"><span className="text-[11px] text-gray-500">End</span><span className="text-sm font-medium text-gray-700">{formatDisplay(rhythm.eveningEnd)}</span></div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-
           </div>
-        </div>
-      </main>
+        </main>
+      )}
     </div>
   );
 }

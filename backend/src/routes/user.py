@@ -61,3 +61,19 @@ def get_user(
 		message="User fetched successfully",
 		data=UserResponse.model_validate(user)
 	)
+@router.delete(
+    "/profile-picture",
+    status_code=HTTPStatus.OK,
+    response_model=SuccessResponse[UserResponse]
+)
+def delete_profile_picture(
+    user: User = Depends(get_user_or_404),
+    db: Session = Depends(get_db)
+):
+    user.profile_pic_url = None
+    db.flush()
+    db.refresh(user)
+    return SuccessResponse[UserResponse](
+        message="User fetched successfully",
+        data=UserResponse.model_validate(user)
+    )
