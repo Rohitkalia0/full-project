@@ -22,11 +22,21 @@ class SignupRequest(BaseSchema):
 				"Password must contain uppercase, lowercase, digit, special character and be 8+ chars"
 			)
 		return passwd
+	
+	@field_validator("email", mode="before")
+	@classmethod
+	def normalize_email(cls, value: str) -> str:
+		return value.lower()
 
 
 class LoginRequest(BaseSchema):
-    email: EmailStr
-    password: str
+	email: EmailStr
+	password: str
+	
+	@field_validator("email", mode="before")
+	@classmethod
+	def normalize_email(cls, value: str) -> str:
+		return value.lower()
 
 
 class TokenResponse(BaseModel):
