@@ -1,3 +1,5 @@
+from datetime import date
+from typing import Union
 from sqlalchemy.orm import Session
 
 import src.services.skill as services
@@ -22,12 +24,14 @@ from src.schemas.skill import (
 
 
 def get_skills(
+	entry_date: Union[date, None],
 	sort_by: SkillSortField,
 	order: SortOrder,
 	user: User,
 	db: Session
 ) -> SuccessResponse[SkillsResponse]:
 	skills_data = services.get_skills(
+		entry_date,
 		sort_by,
 		order,
 		user,

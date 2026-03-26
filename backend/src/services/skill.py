@@ -1,5 +1,6 @@
+from datetime import date
 from http import HTTPStatus
-from typing import List
+from typing import List, Union
 from uuid import UUID
 
 from sqlalchemy import asc, desc
@@ -28,6 +29,7 @@ from src.schemas.skill import (
 
 
 def get_skills(
+	entry_date: Union[date, None],
 	sort_by: SkillSortField,
 	order: SortOrder,
 	user: User,
@@ -41,7 +43,10 @@ def get_skills(
 
 	for data in skills_data:
 		activities: List[SkillActivityResponse] = []
-		stmt = select(SkillActivity).where(SkillActivity.skill_id == data.id)
+		if entry_date is None:
+			stmt = select(SkillActivity).where(SkillActivity.skill_id == data.id)
+		else:
+			stmt = select(SkillActivity).where(SkillActivity.skill_id == data.id, SkillActivity.entry_date == entry_date)
 		skill_activity_data = db.scalars(stmt).all()
 		for activity in skill_activity_data:
 			activities.append(SkillActivityResponse.model_validate(activity))
