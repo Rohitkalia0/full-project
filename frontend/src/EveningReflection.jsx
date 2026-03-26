@@ -30,6 +30,8 @@ function Toast({ message, type, onClose }) {
   return <div className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium ${colors[type]}`}>{icons[type]}{message}</div>;
 }
 
+const TEXT_TRUNCATE_LENGTH = 150;
+
 const DEFAULT_FORM = { win: "", lesson: "", mistake: "", distraction: "", mood_rating: 2, energy_rating: 2 };
 
 // Local date YYYY-MM-DD (matches backend's date.today())
@@ -104,6 +106,12 @@ function EveningReflection() {
 
   // --- Derived ---
   const hasChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
+
+  useEffect(() => {
+    const onBeforeUnload = (e) => { if (hasChanges) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasChanges]);
 
   // --- Handlers ---
   const handleChange = (e) => {
@@ -226,6 +234,11 @@ function EveningReflection() {
   const moodLabels = ["", "Low", "Fair", "Good", "Great", "Excellent"];
   const energyLabels = ["", "Drained", "Tired", "Steady", "Energised", "Charged"];
 
+  const [editingField, setEditingField] = useState(null);
+  const [expandedFields, setExpandedFields] = useState({});
+  const textareaRefs = useRef({});
+  const toggleFieldExpanded = (name) => setExpandedFields(prev => ({ ...prev, [name]: !prev[name] }));
+
   const saveDisabled = !hasChanges || saving;
 
   return (
@@ -236,8 +249,34 @@ function EveningReflection() {
       <Sidebar activePath="/evening-reflection" onNavigate={handleNavigate} />
 
       {!pageReady ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-10 pt-8 pb-4 shrink-0">
+            <div className="h-3 w-32 bg-gray-200 rounded-lg animate-pulse mb-2" />
+            <div className="h-6 w-64 bg-gray-200 rounded-lg animate-pulse mb-1" />
+            <div className="h-3 w-52 bg-gray-100 rounded-lg animate-pulse mt-1" />
+          </div>
+          <div className="flex-1 flex gap-8 px-10 pb-8 overflow-hidden min-h-0">
+            <div className="flex-1 flex flex-col gap-5 pr-1">
+              {[1,2,3,4].map(n => (
+                <div key={n} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                  <div className="h-4 w-28 bg-gray-100 rounded-lg mb-3" />
+                  <div className="h-16 w-full bg-gray-50 rounded-xl" />
+                </div>
+              ))}
+            </div>
+            <div className="w-[300px] shrink-0 flex flex-col gap-5">
+              {[1,2].map(n => (
+                <div key={n} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                  <div className="h-4 w-24 bg-gray-100 rounded-lg mb-2" />
+                  <div className="h-3 w-40 bg-gray-50 rounded-lg mb-4" />
+                  <div className="flex justify-between mb-3">
+                    {[1,2,3,4,5].map(i => <div key={i} className="w-10 h-10 bg-gray-100 rounded-full" />)}
+                  </div>
+                </div>
+              ))}
+              <div className="h-11 bg-gray-100 rounded-xl animate-pulse" />
+            </div>
+          </div>
         </div>
       ) : <main className="flex-1 flex flex-col overflow-hidden">
         <div className="px-10 pt-8 pb-4 shrink-0">
@@ -253,23 +292,59 @@ function EveningReflection() {
               { name: "lesson", label: "Lesson Learned", placeholder: "What did you learn?" },
               { name: "mistake", label: "Today's Mistake", placeholder: "What would you do differently?" },
               { name: "distraction", label: "Primary Distraction", placeholder: "What pulled your focus?" },
-            ].map(({ name, label, placeholder }) => (
+            ].map(({ name, label, placeholder }) => {
+              const isEditing = editingField === name;
+              const text = form[name];
+              const isLong = text.length > TEXT_TRUNCATE_LENGTH;
+              const isExpanded = expandedFields[name];
+              return (
               <div key={name} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <label htmlFor={name} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 mb-2 cursor-pointer">{label}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></label>
-                <textarea
-                  id={name}
-                  name={name}
-                  value={form[name]}
-                  onChange={handleChange}
-                  placeholder={placeholder}
-                  maxLength={2000}
-                  rows={2}
-                  style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
-                  onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-blue-300 focus:bg-white transition min-h-[72px]"
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">{label}</label>
+                  {!isEditing && (
+                    <button onClick={() => setEditingField(name)}
+                      className="p-1.5 rounded-lg text-gray-300 hover:text-blue-600 hover:bg-blue-50 transition">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                  )}
+                </div>
+                {isEditing ? (
+                  <textarea
+                    ref={(el) => { textareaRefs.current[name] = el; }}
+                    autoFocus
+                    id={name}
+                    name={name}
+                    value={text}
+                    onChange={handleChange}
+                    placeholder={placeholder}
+                    maxLength={2000}
+                    rows={2}
+                    style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
+                    onBlur={() => setEditingField(null)}
+                    onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-blue-300 focus:bg-white transition min-h-[72px]"
+                  />
+                ) : (
+                  <div
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm min-h-[72px]"
+                  >
+                    {text ? (
+                      <span className="text-gray-700 whitespace-pre-wrap break-words">
+                        {isLong && !isExpanded ? `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...` : text}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">{placeholder}</span>
+                    )}
+                  </div>
+                )}
+                {!isEditing && isLong && (
+                  <button onClick={() => toggleFieldExpanded(name)}
+                    className="text-blue-500 hover:text-blue-600 text-xs font-medium mt-1">
+                    {isExpanded ? "show less" : "show more"}
+                  </button>
+                )}
               </div>
-            ))}
+            )})}
           </div>
 
           <div className="w-[300px] shrink-0 flex flex-col gap-5">

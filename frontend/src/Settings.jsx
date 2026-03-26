@@ -122,17 +122,16 @@ function Settings() {
     try {
       const userRes = await getUserAPI();
       const user = userRes?.data ?? userRes;
-      if (user?.first_name) {
-        setFirstName(user.first_name);
-        setLocalStorageItem("first_name", user.first_name);
-      }
-      if (user?.last_name) {
-        setLastName(user.last_name);
-        setLocalStorageItem("last_name", user.last_name);
-      }
+      setFirstName(user?.first_name || "");
+      setLocalStorageItem("first_name", user?.first_name || "");
+      setLastName(user?.last_name || "");
+      setLocalStorageItem("last_name", user?.last_name || "");
       if (user?.profile_pic_url) {
         setPhotoUrl(user.profile_pic_url);
         setLocalStorageItem("photo_url", user.profile_pic_url);
+      } else {
+        setPhotoUrl(null);
+        removeLocalStorageItem("photo_url");
       }
     } catch (err) { console.error("loadUser failed:", err.message); }
 
@@ -147,6 +146,12 @@ function Settings() {
     tempRhythm.eveningStart !== rhythm.eveningStart ||
     tempRhythm.eveningEnd !== rhythm.eveningEnd
   );
+
+  useEffect(() => {
+    const onBeforeUnload = (e) => { if (hasChanges) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasChanges]);
 
   const startEdit = () => {
     setTempFirstName(firstName);
@@ -179,9 +184,11 @@ function Settings() {
     if (Object.keys(errs).length > 0) { setRhythmErrors(errs); return false; }
 
     try {
-      if (tempFirstName.trim() !== firstName || tempLastName.trim() !== lastName) {
-        const payload = { first_name: tempFirstName.trim() };
-        if (tempLastName.trim()) payload.last_name = tempLastName.trim();
+      const nameChanged = tempFirstName.trim() !== firstName || tempLastName.trim() !== lastName;
+      if (nameChanged) {
+        const payload = {};
+        if (tempFirstName.trim() !== firstName) payload.first_name = tempFirstName.trim();
+        if (tempLastName.trim() !== lastName) payload.last_name = tempLastName.trim() || null;
         await updateUserAPI(payload);
         setFirstName(tempFirstName.trim());
         setLastName(tempLastName.trim());
@@ -234,9 +241,13 @@ function Settings() {
         try {
           const res = await uploadPhotoAPI(file);
           const photoData = res?.data ?? res;
-          const url = photoData?.profile_pic_url ?? preview;
-          setPhotoUrl(url);
-          setLocalStorageItem("photo_url", url);  // fires storage event → Sidebar updates
+          const url = photoData?.profile_pic_url;
+          if (url) {
+            setPhotoUrl(url);
+            setLocalStorageItem("photo_url", url);
+          } else {
+            setPhotoUrl(preview);
+          }
           showToast("Profile picture updated", "success");
         } catch (err) { showToast(err.message || "Failed to upload", "error"); }
       }
@@ -267,7 +278,7 @@ function Settings() {
       try {
         await removePhotoAPI();
         setPhotoUrl(null);
-        localStorage.removeItem("photo_url");
+        removeLocalStorageItem("photo_url");
         showToast("Profile picture removed", "success");
       } catch (err) {
         showToast(err.message || "Failed to remove", "error");

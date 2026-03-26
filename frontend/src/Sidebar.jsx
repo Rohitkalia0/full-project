@@ -1,5 +1,4 @@
 import { logout } from "./auth";
-import { getUserAPI } from "./api";
 import { useState, useEffect } from "react";
 
 const LogoutIcon = () => (
@@ -40,16 +39,7 @@ function Sidebar({ activePath, onNavigate }) {
     };
     readLocal();
 
-    // Fetch fresh user data from backend and sync localStorage
-    getUserAPI().then(res => {
-      const user = res?.data ?? res;
-      if (user?.first_name) { setFirstName(user.first_name); localStorage.setItem("first_name", user.first_name); }
-      if (user?.last_name) { setLastName(user.last_name); localStorage.setItem("last_name", user.last_name); }
-      if (user?.email) { setEmail(user.email); localStorage.setItem("user_email", user.email); }
-      if (user?.profile_pic_url) { setPhotoUrl(user.profile_pic_url); localStorage.setItem("photo_url", user.profile_pic_url); }
-    }).catch(() => {});
-
-    // Listen for storage changes from other tabs or Settings page
+    // Listen for storage changes from Settings page or other mutations
     window.addEventListener("storage", readLocal);
     return () => window.removeEventListener("storage", readLocal);
   }, [activePath]);

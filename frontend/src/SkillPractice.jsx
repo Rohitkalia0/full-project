@@ -8,6 +8,13 @@ import Sidebar from "./Sidebar";
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_CHARS = 2000;
 const MIN_CHARS = 2;
+const SKILL_NAME_MAX = 20;
+
+// Local date YYYY-MM-DD (avoids UTC offset issues from toISOString)
+const getLocalToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 const StarIcon = ({ filled }) => (<svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>);
@@ -93,6 +100,29 @@ function SkeletonCard() {
   );
 }
 
+// ─── Truncated Text ──────────────────────────────────────────────────────────
+const TEXT_TRUNCATE_LENGTH = 150;
+
+function TruncatedText({ text, className }) {
+  const [expanded, setExpanded] = useState(false);
+  if (text.length <= TEXT_TRUNCATE_LENGTH) return <span className={className}>{text}</span>;
+  return (
+    <span className={className}>
+      {expanded ? text : `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...`}
+      <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+        className="ml-1 text-blue-500 hover:text-blue-600 text-xs font-medium">
+        {expanded ? "show less" : "show more"}
+      </button>
+    </span>
+  );
+}
+
+// ─── Minutes input filter — block non-numeric keys ───────────────────────────
+const blockInvalidMinutesKeys = (e) => {
+  if (["e", "E", "+", "-", ".", ","].includes(e.key)) e.preventDefault();
+};
+const sanitizeMinutesInput = (val) => val.replace(/[^0-9]/g, "");
+
 // ─── Validation helpers ───────────────────────────────────────────────────────
 const validateText = (val, fieldName = "This field") => {
   const trimmed = val.trim();
@@ -160,7 +190,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
 
   const firstActivity = skill.activities?.[0];
   const entryDate = firstActivity?.entry_date;
-  const isFromYesterday = entryDate ? String(entryDate) !== today : false;
+  const isFromYesterday = entryDate ? String(entryDate).split("T")[0] !== today : false;
 
   const [activities, setActivities] = useState(
     sortActivities((skill.activities || []).map(a => mapActivity(a, isFromYesterday)))
@@ -183,6 +213,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   const [skillName, setSkillName] = useState(skill.name || "");
   const [skillNameError, setSkillNameError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const savingRef = useRef(false);
 
   const allDone = activities.length > 0 && activities.every(a => a.is_completed);
   const doneCount = activities.filter(a => a.is_completed).length;
@@ -191,15 +222,20 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   useEffect(() => { onActivitiesChanged(skill.id, activities); }, [activities]);
 
   useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    const handler = (e) => {
+      if (e.key === "Escape") {
+        if (editingTitle || editingActivityId || minutesEditId) return;
+        onClose();
+      }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [editingTitle, editingActivityId, minutesEditId]);
 
   const toggleDone = async (id) => {
     const target = activities.find(a => a.id === id);
     const newVal = !target.is_completed;
-    setActivities(prev => sortActivities(prev.map(a => a.id === id ? { ...a, is_completed: newVal } : a)));
+    setActivities(prev => prev.map(a => a.id === id ? { ...a, is_completed: newVal } : a));
     try {
       await updateSkillActivitiesAPI(skill.id, { activities: [{ id, is_completed: newVal }] });
       const updated = activities.map(a => a.id === id ? { ...a, is_completed: newVal } : a);
@@ -209,7 +245,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
       }
     } catch (err) {
       console.error("Toggle done failed:", err);
-      setActivities(prev => sortActivities(prev.map(a => a.id === id ? { ...a, is_completed: !newVal } : a)));
+      setActivities(prev => prev.map(a => a.id === id ? { ...a, is_completed: !newVal } : a));
     }
   };
 
@@ -232,16 +268,16 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   };
 
   const addActivity = async () => {
+    if (savingRef.current) return;
     const nameErr = validateText(newActivityName, "Activity name");
     if (nameErr) { setNewActivityError(nameErr); return; }
     const mins = newMinutes === "" ? 0 : parseInt(newMinutes, 10);
-    if (newMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 9999)) {
-      setNewActivityError("Minutes must be between 0 and 9999");
+    if (newMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 1440)) {
+      setNewActivityError("Minutes must be between 0 and 1440");
       return;
     }
-    const isDuplicate = activities.some(a => a.name.trim().toLowerCase() === newActivityName.trim().toLowerCase());
-    if (isDuplicate) { setNewActivityError("An activity with this name already exists"); return; }
     setNewActivityError("");
+    savingRef.current = true;
     try {
       const res = await createSkillActivitiesAPI(skill.id, {
         activities: [{
@@ -271,6 +307,8 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
     } catch (err) {
       console.error("Add activity failed:", err);
       showToast("Failed to add activity", "error");
+    } finally {
+      savingRef.current = false;
     }
   };
 
@@ -286,8 +324,8 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
     const nameErr = validateText(editText, "Activity name");
     if (nameErr) { setEditTextError(nameErr); return; }
     const mins = editMinutes === "" ? 0 : parseInt(editMinutes, 10);
-    if (editMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 9999)) {
-      setEditTextError("Minutes must be between 0 and 9999");
+    if (editMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 1440)) {
+      setEditTextError("Minutes must be between 0 and 1440");
       return;
     }
     const updated = activities.map(a =>
@@ -309,13 +347,16 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
 
   // ── Inline minutes-only save ──────────────────────────────────────────────
   const saveInlineMinutes = async (id) => {
+    const current = activities.find(a => a.id === id);
+    const currentMins = current?.minutes_practised || 0;
     const mins = minutesEditVal === "" ? 0 : parseInt(minutesEditVal, 10);
-    if (minutesEditVal !== "" && (isNaN(mins) || mins < 0 || mins > 9999)) {
+    if (minutesEditVal !== "" && (isNaN(mins) || mins < 0 || mins > 1440)) {
       setMinutesEditId(null);
       return;
     }
-    setActivities(prev => prev.map(a => a.id === id ? { ...a, minutes_practised: mins } : a));
     setMinutesEditId(null);
+    if (mins === currentMins) return;
+    setActivities(prev => prev.map(a => a.id === id ? { ...a, minutes_practised: mins } : a));
     try {
       await updateSkillActivitiesAPI(skill.id, { activities: [{ id, minutes_practised: mins }] });
     } catch (err) { console.error("Inline minutes save failed:", err); }
@@ -330,8 +371,9 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   };
 
   const saveSkillName = async () => {
-    const err = validateText(skillName, "Skill name");
-    if (err) { setSkillNameError(err); return; }
+    const trimmed = skillName.trim();
+    if (!trimmed || trimmed.length < MIN_CHARS) { setSkillNameError(`Skill name must be at least ${MIN_CHARS} characters`); return; }
+    if (trimmed.length > SKILL_NAME_MAX) { setSkillNameError(`Skill name cannot exceed ${SKILL_NAME_MAX} characters`); return; }
     setSkillNameError("");
     setEditingTitle(false);
     try {
@@ -371,7 +413,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                     onChange={e => { setSkillName(e.target.value); setSkillNameError(""); }}
                     onBlur={saveSkillName}
                     onKeyDown={e => { if (e.key === "Enter") saveSkillName(); if (e.key === "Escape") { setEditingTitle(false); setSkillNameError(""); } }}
-                    maxLength={MAX_CHARS}
+                    maxLength={SKILL_NAME_MAX}
                     className={`w-full text-lg font-bold bg-white border rounded-xl px-3 py-1.5 outline-none text-gray-800 ${skillNameError ? "border-red-400" : "border-blue-300"}`}
                   />
                   {skillNameError && <p className="text-red-500 text-xs mt-1">{skillNameError}</p>}
@@ -421,10 +463,11 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                 <input
                   type="number"
                   value={newMinutes}
-                  onChange={e => setNewMinutes(e.target.value)}
+                  onChange={e => setNewMinutes(sanitizeMinutesInput(e.target.value))}
+                  onKeyDown={blockInvalidMinutesKeys}
                   placeholder="mins"
                   min={0}
-                  max={9999}
+                  max={1440}
                   className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
                 />
               </div>
@@ -475,10 +518,11 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                         <input
                           type="number"
                           value={editMinutes}
-                          onChange={e => setEditMinutes(e.target.value)}
+                          onChange={e => setEditMinutes(sanitizeMinutesInput(e.target.value))}
+                          onKeyDown={blockInvalidMinutesKeys}
                           placeholder="mins"
                           min={0}
-                          max={9999}
+                          max={1440}
                           className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
                         />
                       </div>
@@ -499,8 +543,8 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                       >
                         {a.is_completed && <CheckIcon />}
                       </button>
-                      <span className={`flex-1 text-sm ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
-                        {a.name}
+                      <span className={`flex-1 text-sm break-words whitespace-pre-wrap ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
+                        <TruncatedText text={a.name} className="" />
                         {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                       </span>
                     </div>
@@ -526,15 +570,16 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                               autoFocus
                               type="number"
                               value={minutesEditVal}
-                              onChange={e => setMinutesEditVal(e.target.value)}
+                              onChange={e => setMinutesEditVal(sanitizeMinutesInput(e.target.value))}
                               onBlur={() => saveInlineMinutes(a.id)}
                               onKeyDown={e => {
+                                blockInvalidMinutesKeys(e);
                                 if (e.key === "Enter") saveInlineMinutes(a.id);
                                 if (e.key === "Escape") setMinutesEditId(null);
                               }}
                               placeholder="mins"
                               min={0}
-                              max={9999}
+                              max={1440}
                               className="w-full text-xs text-violet-700 font-medium outline-none bg-transparent placeholder-violet-300"
                             />
                           </div>
@@ -577,7 +622,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
 function SkillCard({ skill, today, activities, onClick }) {
   const firstActivity = skill.activities?.[0];
   const entryDate = firstActivity?.entry_date;
-  const isFromYesterday = entryDate ? String(entryDate) !== today : false;
+  const isFromYesterday = entryDate ? String(entryDate).split("T")[0] !== today : false;
 
   const liveActivities = activities ?? skill.activities ?? [];
   const total = liveActivities.length;
@@ -627,7 +672,7 @@ function SkillPractice() {
   const [skillNameError, setSkillNameError] = useState("");
   const [toast, setToast] = useState(null);
   const [selectedSkill, setSelectedSkill] = useState(null);
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalToday();
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
@@ -640,7 +685,7 @@ function SkillPractice() {
       const raw = res?.data?.skills || res?.skills || [];
       const mapped = raw.map(s => {
         const firstActivity = s.activities?.[0];
-        const entryDate = firstActivity?.entry_date ? String(firstActivity.entry_date) : null;
+        const entryDate = firstActivity?.entry_date ? String(firstActivity.entry_date).split("T")[0] : null;
         const isFromYesterday = entryDate ? entryDate !== today : false;
         const wasFullyCompleted = isFromYesterday && s.activities?.length > 0 && s.activities.every(a => a.is_completed);
         return { ...s, isFromYesterday, wasFullyCompleted };
@@ -659,7 +704,7 @@ function SkillPractice() {
   const validateSkillName = (name) => {
     if (!name.trim()) { setSkillNameError("Skill name cannot be empty"); return false; }
     if (name.trim().length < MIN_CHARS) { setSkillNameError(`Skill name must be at least ${MIN_CHARS} characters`); return false; }
-    if (name.trim().length > MAX_CHARS) { setSkillNameError(`Skill name cannot exceed ${MAX_CHARS} characters`); return false; }
+    if (name.trim().length > SKILL_NAME_MAX) { setSkillNameError(`Skill name cannot exceed ${SKILL_NAME_MAX} characters`); return false; }
     const isDuplicate = skills.some(s => s.name.trim().toLowerCase() === name.trim().toLowerCase());
     if (isDuplicate) { setSkillNameError("A skill with this name already exists"); return false; }
     setSkillNameError(""); return true;
@@ -668,12 +713,10 @@ function SkillPractice() {
   const addSkill = async () => {
     if (!validateSkillName(newSkillName)) return;
     try {
-      const res = await createSkillAPI({ name: newSkillName.trim() });
-      const newSkill = { ...(res?.data || res), activities: [], isFromYesterday: false, wasFullyCompleted: false };
-      setSkills(prev => [newSkill, ...prev]);
-      setSkillActivities(prev => ({ ...prev, [newSkill.id]: [] }));
+      await createSkillAPI({ name: newSkillName.trim() });
       setNewSkillName(""); setSkillNameError("");
       showToast("Skill added!", "success");
+      await loadSkills();
     } catch (err) {
       console.error("Create skill failed:", err);
       setSkillNameError(err.message || "Could not create skill");
@@ -689,7 +732,10 @@ function SkillPractice() {
     setSkillActivities(prev => ({ ...prev, [skillId]: newActivities }));
   };
 
-  const openSkill = (skill) => setSelectedSkill(skill);
+  const openSkill = (skill) => {
+    const liveActivities = skillActivities[skill.id];
+    setSelectedSkill(liveActivities ? { ...skill, activities: liveActivities } : skill);
+  };
   const closeSkill = () => setSelectedSkill(null);
 
   return (
@@ -726,7 +772,7 @@ function SkillPractice() {
                   onChange={e => { setNewSkillName(e.target.value); if (skillNameError) setSkillNameError(""); }}
                   onKeyDown={e => e.key === "Enter" && addSkill()}
                   placeholder="Add a new skill..."
-                  maxLength={MAX_CHARS}
+                  maxLength={SKILL_NAME_MAX}
                   className={`w-full bg-white border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition shadow-sm ${skillNameError ? "border-red-300 focus:border-red-400 bg-red-50" : "border-gray-200 focus:border-blue-300"}`}
                 />
                 {skillNameError && <p className="text-red-500 text-xs font-medium pl-1">{skillNameError}</p>}
