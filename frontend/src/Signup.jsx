@@ -23,6 +23,7 @@ function Signup() {
   const [touched, setTouched] = useState({ email: false, password: false, confirm_password: false });
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const emailValid = emailRegex.test(formData.email);
@@ -60,12 +61,15 @@ function Signup() {
     if (!formData.confirm_password) newErrors.confirm_password = "Please confirm your password";
     else if (formData.password !== formData.confirm_password) newErrors.confirm_password = "Passwords do not match";
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+    setSubmitting(true);
     try {
       const res = await signupAPI({ email: formData.email, password: formData.password });
       setToast({ message: res.message || "Account created! Please log in.", type: "success" });
       setTimeout(() => navigate("/login"), 2000);
     } catch (err) {
       setErrors({ email: err.message });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -152,8 +156,19 @@ function Signup() {
             </div>
 
             <button type="submit"
-              className="w-full p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-sm transition shadow-sm mt-2">
-              Sign Up
+              disabled={submitting}
+              className={`w-full p-3 rounded-xl font-medium text-sm transition shadow-sm mt-2 flex items-center justify-center gap-2 ${
+                submitting
+                  ? "bg-blue-400 cursor-not-allowed text-white"
+                  : "bg-blue-600 hover:bg-blue-700 text-white"
+              }`}>
+              {submitting && (
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+              )}
+              {submitting ? "Signing up..." : "Sign Up"}
             </button>
           </form>
 

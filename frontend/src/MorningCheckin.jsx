@@ -62,6 +62,28 @@ function Toast({ message, type, onClose }) {
   return <div className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium ${colors[type]}`}>{icons[type]}{message}</div>;
 }
 
+// Local date YYYY-MM-DD (avoids UTC offset issues from toISOString)
+const getLocalToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const TEXT_TRUNCATE_LENGTH = 150;
+
+function TruncatedText({ text, className }) {
+  const [expanded, setExpanded] = useState(false);
+  if (text.length <= TEXT_TRUNCATE_LENGTH) return <span className={className}>{text}</span>;
+  return (
+    <span className={className}>
+      {expanded ? text : `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...`}
+      <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+        className="ml-1 text-blue-500 hover:text-blue-600 text-xs font-medium">
+        {expanded ? "show less" : "show more"}
+      </button>
+    </span>
+  );
+}
+
 const parseMorningData = (res) => {
   if (res?.data && typeof res.data === "object" && res.data.id) return res.data;
   if (res?.id) return res;
@@ -76,6 +98,7 @@ function MorningCheckin() {
   const [savedActivities, setSavedActivities] = useState([]);
   const [newActivity, setNewActivity] = useState("");
   const [newActivityError, setNewActivityError] = useState("");
+  const newActivityRef = useRef(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -98,6 +121,12 @@ function MorningCheckin() {
 
   useEffect(() => { confidenceRef.current = confidence; }, [confidence]);
   useEffect(() => { loadMorning(); }, []);
+
+  useEffect(() => {
+    const onBeforeUnload = (e) => { if (hasChanges) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasChanges]);
 
   const applyMorningData = (data, today) => {
     const rawDate = data.date ?? "";
@@ -122,7 +151,7 @@ function MorningCheckin() {
 
   const loadMorning = async () => {
     try {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getLocalToday();
       const res = await getMorningAPI(today);
       const data = parseMorningData(res);
       if (data) applyMorningData(data, today);
@@ -135,7 +164,7 @@ function MorningCheckin() {
   const ensureCheckinId = async () => {
     if (checkinIdRef.current) return checkinIdRef.current;
     // Check if today's morning already exists (e.g. created in a prior session)
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalToday();
     try {
       const res = await getMorningAPI(today);
       const data = parseMorningData(res);
@@ -162,6 +191,7 @@ function MorningCheckin() {
       done: false, priority: false, protect: false, isCarriedOver: false, isNew: true
     }]);
     setNewActivity("");
+    if (newActivityRef.current) newActivityRef.current.style.height = "auto";
   };
 
   const toggleDone = (id) => setActivities(prev => prev.map(a => a.id === id ? { ...a, done: !a.done } : a));
@@ -238,7 +268,7 @@ function MorningCheckin() {
           await updateMorningAPI(id, {
             confidence_rating: Number(confidence),
             activities: existingToUpdate.map(a => ({
-              id: a.realId, is_completed: a.done, is_priority: a.priority, is_habit: a.protect
+              id: a.realId, title: a.text, is_completed: a.done, is_priority: a.priority, is_habit: a.protect
             }))
           });
         } else {
@@ -295,8 +325,34 @@ function MorningCheckin() {
       <Sidebar activePath="/morning-checkin" onNavigate={handleNavigate} />
 
       {!pageReady ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-10 pt-8 pb-4 shrink-0">
+            <div className="h-3 w-28 bg-gray-200 rounded-lg animate-pulse mb-2" />
+            <div className="h-6 w-56 bg-gray-200 rounded-lg animate-pulse mb-1" />
+            <div className="h-3 w-44 bg-gray-100 rounded-lg animate-pulse mt-1" />
+          </div>
+          <div className="flex-1 overflow-y-auto px-10 pb-8">
+            <div className="flex flex-col gap-5 max-w-2xl">
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                <div className="h-4 w-32 bg-gray-100 rounded-lg mb-2" />
+                <div className="h-2 w-full bg-gray-100 rounded-full mb-3" />
+                <div className="flex gap-4">
+                  {[1,2,3,4,5].map(n => <div key={n} className="h-4 w-4 bg-gray-100 rounded" />)}
+                </div>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                <div className="h-4 w-36 bg-gray-100 rounded-lg mb-4" />
+                <div className="h-10 w-full bg-gray-100 rounded-xl mb-4" />
+                {[1,2,3].map(n => (
+                  <div key={n} className="flex items-center gap-3 py-3">
+                    <div className="w-5 h-5 bg-gray-100 rounded-md" />
+                    <div className="h-3 bg-gray-100 rounded-lg flex-1" />
+                  </div>
+                ))}
+              </div>
+              <div className="h-11 bg-gray-100 rounded-xl animate-pulse" />
+            </div>
+          </div>
         </div>
       ) : <main className="flex-1 flex flex-col overflow-hidden">
         <div className="px-10 pt-8 pb-4 shrink-0">
@@ -341,7 +397,7 @@ function MorningCheckin() {
               <label className="block text-sm font-semibold text-gray-700 mb-3">Morning Activities</label>
               <div className="flex gap-2 mb-4">
                 <div className="flex-1 flex flex-col gap-1">
-                  <textarea value={newActivity}
+                  <textarea ref={newActivityRef} value={newActivity}
                     onChange={(e) => { setNewActivity(e.target.value); if (newActivityError) setNewActivityError(""); }}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addActivity(); } }}
                     placeholder="Add a new activity..."
@@ -376,7 +432,7 @@ function MorningCheckin() {
                           className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-2 py-1 outline-none text-gray-700 min-h-[28px]" />
                       ) : (
                         <span className={`text-sm break-words whitespace-pre-wrap ${a.done ? "line-through text-gray-400" : "text-gray-700"}`}>
-                          {a.text}
+                          <TruncatedText text={a.text} className="" />
                           {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                           {a.isNew && <span className="ml-2 text-[10px] text-blue-500 font-medium">unsaved</span>}
                         </span>

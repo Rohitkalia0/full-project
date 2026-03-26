@@ -16,6 +16,68 @@ const handleResponse = async (res) => {
   return data;
 };
 
+// ================= TOKEN REFRESH =================
+
+let refreshPromise = null;
+
+const refreshTokens = async () => {
+  const refreshToken = localStorage.getItem("refresh_token");
+  if (!refreshToken) throw new Error("No refresh token");
+
+  const res = await fetch(`${BASE_URL}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+
+  if (!res.ok) throw new Error("Refresh failed");
+
+  const data = await res.json();
+  const tokens = data?.data ?? data;
+  localStorage.setItem("access_token", tokens.access_token);
+  localStorage.setItem("refresh_token", tokens.refresh_token);
+  return tokens.access_token;
+};
+
+// Deduplicated refresh — if multiple 401s fire at once, only one refresh call is made
+const ensureFreshToken = () => {
+  if (!refreshPromise) {
+    refreshPromise = refreshTokens().finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+};
+
+// Wrapper for authenticated fetch — retries once on 401 after refreshing tokens
+const authFetch = async (url, options = {}) => {
+  let res = await fetch(url, options);
+
+  if (res.status === 401) {
+    try {
+      const newToken = await ensureFreshToken();
+      // Rebuild headers with new token
+      const retryOptions = { ...options };
+      if (retryOptions.headers instanceof Headers) {
+        retryOptions.headers.set("Authorization", `Bearer ${newToken}`);
+      } else if (retryOptions.headers) {
+        retryOptions.headers = { ...retryOptions.headers, Authorization: `Bearer ${newToken}` };
+      }
+      res = await fetch(url, retryOptions);
+    } catch {
+      // Refresh failed — force logout
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("user_email");
+      localStorage.removeItem("first_name");
+      localStorage.removeItem("last_name");
+      localStorage.removeItem("photo_url");
+      window.location.href = "/login";
+      throw new Error("Session expired");
+    }
+  }
+
+  return res;
+};
+
 // ================= AUTH =================
 
 export const signupAPI = async (payload) => {
@@ -39,7 +101,7 @@ export const loginAPI = async (payload) => {
 // ================= USER =================
 
 export const updateUserAPI = async (payload) => {
-  const res = await fetch(`${BASE_URL}/users`, {
+  const res = await authFetch(`${BASE_URL}/users`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -50,7 +112,7 @@ export const updateUserAPI = async (payload) => {
 export const uploadPhotoAPI = async (file) => {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${BASE_URL}/users/profile-picture`, {
+  const res = await authFetch(`${BASE_URL}/users/profile-picture`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${getToken()}` },
     body: formData
@@ -59,7 +121,7 @@ export const uploadPhotoAPI = async (file) => {
 };
 
 export const getUserAPI = async () => {
-  const res = await fetch(`${BASE_URL}/users/me`, {
+  const res = await authFetch(`${BASE_URL}/users/me`, {
     method: "GET",
     headers: getHeaders()
   });
@@ -69,7 +131,7 @@ export const getUserAPI = async () => {
 // ================= SETTINGS =================
 
 export const createSettingAPI = async (payload) => {
-  const res = await fetch(`${BASE_URL}/settings`, {
+  const res = await authFetch(`${BASE_URL}/settings`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -78,7 +140,7 @@ export const createSettingAPI = async (payload) => {
 };
 
 export const getSettingAPI = async () => {
-  const res = await fetch(`${BASE_URL}/settings`, {
+  const res = await authFetch(`${BASE_URL}/settings`, {
     method: "GET",
     headers: getHeaders()
   });
@@ -86,7 +148,7 @@ export const getSettingAPI = async () => {
 };
 
 export const updateSettingAPI = async (payload) => {
-  const res = await fetch(`${BASE_URL}/settings`, {
+  const res = await authFetch(`${BASE_URL}/settings`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -94,7 +156,7 @@ export const updateSettingAPI = async (payload) => {
   return handleResponse(res);
 };
 export const removePhotoAPI = async () => {
-  const res = await fetch(`${BASE_URL}/users/profile-picture`, {
+  const res = await authFetch(`${BASE_URL}/users/profile-picture`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${getToken()}` }
   });
@@ -104,7 +166,7 @@ export const removePhotoAPI = async () => {
 // ================= MORNING =================
 
 export const createMorningAPI = async (payload) => {
-  const res = await fetch(`${BASE_URL}/morning`, {
+  const res = await authFetch(`${BASE_URL}/morning`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -113,7 +175,7 @@ export const createMorningAPI = async (payload) => {
 };
 
 export const getMorningAPI = async (date) => {
-  const res = await fetch(`${BASE_URL}/morning/${date}`, {
+  const res = await authFetch(`${BASE_URL}/morning/${date}`, {
     method: "GET",
     headers: getHeaders()
   });
@@ -121,7 +183,7 @@ export const getMorningAPI = async (date) => {
 };
 
 export const updateMorningAPI = async (checkinId, payload) => {
-  const res = await fetch(`${BASE_URL}/morning/${checkinId}`, {
+  const res = await authFetch(`${BASE_URL}/morning/${checkinId}`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -130,7 +192,7 @@ export const updateMorningAPI = async (checkinId, payload) => {
 };
 
 export const addActivityAPI = async (checkinId, payload) => {
-  const res = await fetch(`${BASE_URL}/morning/activity/${checkinId}`, {
+  const res = await authFetch(`${BASE_URL}/morning/activity/${checkinId}`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -139,7 +201,7 @@ export const addActivityAPI = async (checkinId, payload) => {
 };
 
 export const deleteActivityAPI = async (activityId) => {
-  const res = await fetch(`${BASE_URL}/morning/activity/${activityId}`, {
+  const res = await authFetch(`${BASE_URL}/morning/activity/${activityId}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${getToken()}` }
   });
@@ -149,7 +211,7 @@ export const deleteActivityAPI = async (activityId) => {
 // ================= EVENING =================
 
 export const createEveningAPI = async (payload) => {
-  const res = await fetch(`${BASE_URL}/evening`, {
+  const res = await authFetch(`${BASE_URL}/evening`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -158,7 +220,7 @@ export const createEveningAPI = async (payload) => {
 };
 
 export const getEveningAPI = async (date) => {
-  const res = await fetch(`${BASE_URL}/evening/${date}`, {
+  const res = await authFetch(`${BASE_URL}/evening/${date}`, {
     method: "GET",
     headers: getHeaders()
   });
@@ -166,7 +228,7 @@ export const getEveningAPI = async (date) => {
 };
 
 export const updateEveningAPI = async (eveningId, payload) => {
-  const res = await fetch(`${BASE_URL}/evening/${eveningId}`, {
+  const res = await authFetch(`${BASE_URL}/evening/${eveningId}`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -177,7 +239,7 @@ export const updateEveningAPI = async (eveningId, payload) => {
 // ================= SKILLS =================
 
 export const getSkillsAPI = async () => {
-  const res = await fetch(`${BASE_URL}/skills`, {
+  const res = await authFetch(`${BASE_URL}/skills`, {
     method: "GET",
     headers: getHeaders()
   });
@@ -185,7 +247,7 @@ export const getSkillsAPI = async () => {
 };
 
 export const createSkillAPI = async (payload) => {
-  const res = await fetch(`${BASE_URL}/skills`, {
+  const res = await authFetch(`${BASE_URL}/skills`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -194,7 +256,7 @@ export const createSkillAPI = async (payload) => {
 };
 
 export const getSkillByIdAPI = async (skillId) => {
-  const res = await fetch(`${BASE_URL}/skills/${skillId}`, {
+  const res = await authFetch(`${BASE_URL}/skills/${skillId}`, {
     method: "GET",
     headers: getHeaders()
   });
@@ -202,7 +264,7 @@ export const getSkillByIdAPI = async (skillId) => {
 };
 
 export const updateSkillAPI = async (skillId, payload) => {
-  const res = await fetch(`${BASE_URL}/skills/${skillId}`, {
+  const res = await authFetch(`${BASE_URL}/skills/${skillId}`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -211,7 +273,7 @@ export const updateSkillAPI = async (skillId, payload) => {
 };
 
 export const createSkillActivitiesAPI = async (skillId, payload) => {
-  const res = await fetch(`${BASE_URL}/skills/${skillId}/activities`, {
+  const res = await authFetch(`${BASE_URL}/skills/${skillId}/activities`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -220,7 +282,7 @@ export const createSkillActivitiesAPI = async (skillId, payload) => {
 };
 
 export const updateSkillActivitiesAPI = async (skillId, payload) => {
-  const res = await fetch(`${BASE_URL}/skills/${skillId}/activities`, {
+  const res = await authFetch(`${BASE_URL}/skills/${skillId}/activities`, {
     method: "PATCH",
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -229,7 +291,7 @@ export const updateSkillActivitiesAPI = async (skillId, payload) => {
 };
 
 export const deleteSkillActivityAPI = async (skillId, activityId) => {
-  const res = await fetch(`${BASE_URL}/skills/${skillId}/activities/${activityId}`, {
+  const res = await authFetch(`${BASE_URL}/skills/${skillId}/activities/${activityId}`, {
     method: "DELETE",
     headers: getHeaders()
   });
