@@ -1,4 +1,6 @@
+from datetime import date
 from http import HTTPStatus
+from typing import Union
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -33,12 +35,14 @@ router = APIRouter(prefix="/skills", tags=["skills"], dependencies=[Depends(get_
 
 @router.get("", status_code=200, response_model=SuccessResponse[SkillsResponse])
 def get_skills(
+	entry_date: Union[date, None] = Query(default=None),
 	sort_by: SkillSortField = Query(default=SkillSortField.created_at),
 	order: SortOrder = Query(default=SortOrder.desc),
 	user: User = Depends(get_user_or_404),
 	db: Session = Depends(get_db)
 ):
 	return controllers.get_skills(
+		entry_date,
 		sort_by,
 		order,
 		user,
