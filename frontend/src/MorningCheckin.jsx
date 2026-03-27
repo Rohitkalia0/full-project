@@ -70,15 +70,14 @@ const getLocalToday = () => {
 
 const TEXT_TRUNCATE_LENGTH = 150;
 
-function TruncatedText({ text, className }) {
-  const [expanded, setExpanded] = useState(false);
+function TruncatedText({ text, className, isExpanded, onToggle }) {
   if (text.length <= TEXT_TRUNCATE_LENGTH) return <span className={className}>{text}</span>;
   return (
     <span className={className}>
-      {expanded ? text : `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...`}
-      <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+      {isExpanded ? text : `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...`}
+      <button onClick={(e) => { e.stopPropagation(); onToggle(); }}
         className="ml-1 text-blue-500 hover:text-blue-600 text-xs font-medium">
-        {expanded ? "show less" : "show more"}
+        {isExpanded ? "show less" : "show more"}
       </button>
     </span>
   );
@@ -102,6 +101,7 @@ function MorningCheckin() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [expandedActivityId, setExpandedActivityId] = useState(null);
   const [isFromYesterday, setIsFromYesterday] = useState(false);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -114,10 +114,11 @@ function MorningCheckin() {
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
-  // Has changes = confidence changed OR activities list differs from saved
+  // Has changes = confidence changed OR activities list differs from saved (compare trimmed text)
   const hasChanges = confidence !== savedConfidence ||
-    JSON.stringify(activities.map(a => ({ text: a.text, done: a.done, priority: a.priority, protect: a.protect }))) !==
-    JSON.stringify(savedActivities.map(a => ({ text: a.text, done: a.done, priority: a.priority, protect: a.protect })));
+    activities.length !== savedActivities.length ||
+    JSON.stringify(activities.map(a => ({ text: a.text.trim(), done: a.done, priority: a.priority, protect: a.protect }))) !==
+    JSON.stringify(savedActivities.map(a => ({ text: a.text.trim(), done: a.done, priority: a.priority, protect: a.protect })));
 
   useEffect(() => { confidenceRef.current = confidence; }, [confidence]);
   useEffect(() => { loadMorning(); }, []);
@@ -262,17 +263,27 @@ function MorningCheckin() {
           savedNewMap.set(a.id, { id: d.id, realId: d.id, isNew: false });
         }
 
-        // PATCH existing activities
+        // PATCH — only send changed fields per activity
+        const patchPayload = {};
+        if (Number(confidence) !== savedConfidence) patchPayload.confidence_rating = Number(confidence);
+
+        const changedActivities = [];
         const existingToUpdate = activities.filter(a => !a.isNew && !a.isCarriedOver && a.realId);
-        if (existingToUpdate.length > 0) {
-          await updateMorningAPI(id, {
-            confidence_rating: Number(confidence),
-            activities: existingToUpdate.map(a => ({
-              id: a.realId, title: a.text, is_completed: a.done, is_priority: a.priority, is_habit: a.protect
-            }))
-          });
-        } else {
-          await updateMorningAPI(id, { confidence_rating: Number(confidence) });
+        for (const a of existingToUpdate) {
+          const saved = savedActivities.find(s => s.id === a.id || s.realId === a.realId);
+          if (!saved) continue;
+          const diff = { id: a.realId };
+          let hasDiff = false;
+          if (a.text !== saved.text) { diff.title = a.text; hasDiff = true; }
+          if (a.done !== saved.done) { diff.is_completed = a.done; hasDiff = true; }
+          if (a.priority !== saved.priority) { diff.is_priority = a.priority; hasDiff = true; }
+          if (a.protect !== saved.protect) { diff.is_habit = a.protect; hasDiff = true; }
+          if (hasDiff) changedActivities.push(diff);
+        }
+        if (changedActivities.length > 0) patchPayload.activities = changedActivities;
+
+        if (Object.keys(patchPayload).length > 0) {
+          await updateMorningAPI(id, patchPayload);
         }
 
         // Sync local state — merge saved new activity IDs into current state
@@ -354,7 +365,7 @@ function MorningCheckin() {
             </div>
           </div>
         </div>
-      ) : <main className="flex-1 flex flex-col overflow-hidden">
+      ) : <main className="flex-1 flex flex-col overflow-hidden" onClick={() => { if (expandedActivityId) setExpandedActivityId(null); }}>
         <div className="px-10 pt-8 pb-4 shrink-0">
           <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Morning Check-in</p>
           <h1 className="text-2xl font-bold text-gray-800 leading-tight">What matters today?</h1>
@@ -425,14 +436,15 @@ function MorningCheckin() {
                       </button>
                       {editingId === a.id ? (
                         <textarea autoFocus value={editText} onChange={(e) => setEditText(e.target.value)}
+                          ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                           onBlur={() => saveEdit(a.id)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(a.id); } }}
                           rows={1}
-                          style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
+                          style={{ resize: "none", overflow: "hidden" }}
                           onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                           className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-2 py-1 outline-none text-gray-700 min-h-[28px]" />
                       ) : (
                         <span className={`text-sm break-words whitespace-pre-wrap ${a.done ? "line-through text-gray-400" : "text-gray-700"}`}>
-                          <TruncatedText text={a.text} className="" />
+                          <TruncatedText text={a.text} className="" isExpanded={expandedActivityId === a.id} onToggle={() => setExpandedActivityId(prev => prev === a.id ? null : a.id)} />
                           {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                           {a.isNew && <span className="ml-2 text-[10px] text-blue-500 font-medium">unsaved</span>}
                         </span>

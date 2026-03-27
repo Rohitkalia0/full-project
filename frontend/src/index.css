@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+/* All clickable elements should show pointer cursor */
+button, [role="button"], label[for], input[type="file"], input[type="checkbox"], input[type="radio"], select, summary, a {
+  cursor: pointer;
+}

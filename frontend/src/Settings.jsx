@@ -312,8 +312,67 @@ function Settings() {
       <Sidebar activePath="/settings" onNavigate={handleNavigate} />
 
       {!pageReady ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-10 pt-8 pb-4 shrink-0">
+            <div className="h-3 w-20 bg-gray-200 rounded-lg animate-pulse mb-2" />
+            <div className="h-6 w-44 bg-gray-200 rounded-lg animate-pulse mb-1" />
+            <div className="h-3 w-56 bg-gray-100 rounded-lg animate-pulse mt-1" />
+          </div>
+          <div className="flex-1 overflow-y-auto px-10 pb-10">
+            <div className="max-w-2xl flex flex-col gap-4">
+              {/* Profile Picture skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                <div className="h-3 w-28 bg-gray-100 rounded-lg mb-4" />
+                <div className="flex items-center gap-5">
+                  <div className="w-20 h-20 rounded-full bg-gray-200 shrink-0" />
+                  <div className="flex flex-col gap-2 flex-1">
+                    <div className="h-4 w-32 bg-gray-100 rounded-lg" />
+                    <div className="h-3 w-44 bg-gray-50 rounded-lg" />
+                    <div className="h-3 w-20 bg-gray-50 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+              {/* Name skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                <div className="h-3 w-16 bg-gray-100 rounded-lg mb-4" />
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <div className="h-3 w-20 bg-gray-50 rounded-lg mb-2" />
+                    <div className="h-4 w-28 bg-gray-100 rounded-lg" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-3 w-20 bg-gray-50 rounded-lg mb-2" />
+                    <div className="h-4 w-28 bg-gray-100 rounded-lg" />
+                  </div>
+                </div>
+              </div>
+              {/* Daily Rhythm skeleton */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+                <div className="h-3 w-24 bg-gray-100 rounded-lg mb-1" />
+                <div className="h-3 w-52 bg-gray-50 rounded-lg mb-4" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                    <div className="h-3 w-24 bg-amber-100 rounded-lg mb-3" />
+                    <div className="flex flex-col gap-2">
+                      <div className="h-3 w-16 bg-amber-100/50 rounded-lg" />
+                      <div className="h-4 w-24 bg-amber-100 rounded-lg" />
+                      <div className="h-3 w-16 bg-amber-100/50 rounded-lg" />
+                      <div className="h-4 w-24 bg-amber-100 rounded-lg" />
+                    </div>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                    <div className="h-3 w-24 bg-indigo-100 rounded-lg mb-3" />
+                    <div className="flex flex-col gap-2">
+                      <div className="h-3 w-16 bg-indigo-100/50 rounded-lg" />
+                      <div className="h-4 w-24 bg-indigo-100 rounded-lg" />
+                      <div className="h-3 w-16 bg-indigo-100/50 rounded-lg" />
+                      <div className="h-4 w-24 bg-indigo-100 rounded-lg" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <main className="flex-1 flex flex-col overflow-hidden">
