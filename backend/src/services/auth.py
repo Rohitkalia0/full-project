@@ -1,3 +1,4 @@
+import datetime
 from http import HTTPStatus
 from uuid import UUID
 
@@ -77,7 +78,7 @@ def logout(
 	db: Session
 ) -> UserResponse:
 	
-	stmt = select(RefreshToken).where(RefreshToken.token == payload.refresh_token)
+	stmt = select(RefreshToken).where(RefreshToken.token == payload.refresh_token, RefreshToken.expires_at > datetime.datetime.now(datetime.timezone.utc))	
 	token_data = db.scalar(stmt)
 	if token_data is None:
 		raise DomainException(
