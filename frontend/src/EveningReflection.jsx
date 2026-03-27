@@ -32,7 +32,7 @@ function Toast({ message, type, onClose }) {
 
 const TEXT_TRUNCATE_LENGTH = 150;
 
-const DEFAULT_FORM = { win: "", lesson: "", mistake: "", distraction: "", mood_rating: 2, energy_rating: 2 };
+const DEFAULT_FORM = { win: "", lesson: "", mistake: "", distraction: "", mood_rating: null, energy_rating: null };
 
 // Local date YYYY-MM-DD (matches backend's date.today())
 function getToday() {
@@ -47,8 +47,8 @@ function buildFormFromData(data) {
     lesson: data.lesson || "",
     mistake: data.mistake || "",
     distraction: data.distraction || "",
-    mood_rating: Number(data.mood_rating) || 2,
-    energy_rating: Number(data.energy_rating) || 2,
+    mood_rating: data.mood_rating != null ? Number(data.mood_rating) : null,
+    energy_rating: data.energy_rating != null ? Number(data.energy_rating) : null,
   };
 }
 
@@ -104,8 +104,13 @@ function EveningReflection() {
     })();
   }, []);
 
-  // --- Derived ---
-  const hasChanges = JSON.stringify(form) !== JSON.stringify(savedForm);
+  // --- Derived (compare trimmed text so trailing whitespace doesn't count) ---
+  const hasChanges = form.win.trim() !== savedForm.win.trim() ||
+    form.lesson.trim() !== savedForm.lesson.trim() ||
+    form.mistake.trim() !== savedForm.mistake.trim() ||
+    form.distraction.trim() !== savedForm.distraction.trim() ||
+    form.mood_rating !== savedForm.mood_rating ||
+    form.energy_rating !== savedForm.energy_rating;
 
   useEffect(() => {
     const onBeforeUnload = (e) => { if (hasChanges) { e.preventDefault(); e.returnValue = ""; } };
@@ -137,8 +142,9 @@ function EveningReflection() {
     const currentSaved = savedFormRef.current;
     const currentId = eveningIdRef.current;
 
-    // No changes → nothing to do
-    if (JSON.stringify(currentForm) === JSON.stringify(currentSaved)) return true;
+    // No changes → nothing to do (compare trimmed text)
+    const textSame = ["win", "lesson", "mistake", "distraction"].every(k => currentForm[k].trim() === currentSaved[k].trim());
+    if (textSame && currentForm.mood_rating === currentSaved.mood_rating && currentForm.energy_rating === currentSaved.energy_rating) return true;
 
     // Validate text fields
     const textFields = ["win", "lesson", "mistake", "distraction"];
@@ -154,30 +160,47 @@ function EveningReflection() {
       }
     }
 
+    // Validate ratings
+    if (currentForm.mood_rating == null) {
+      showToast("Please select a mood rating", "error");
+      return false;
+    }
+    if (currentForm.energy_rating == null) {
+      showToast("Please select an energy level", "error");
+      return false;
+    }
+
     setSaving(true);
     try {
-      // Build payload — trim text, ensure ratings are numbers
-      const payload = {
+      // Build full payload for create, or diff-only payload for update
+      const fullPayload = {
         win: currentForm.win.trim(),
         lesson: currentForm.lesson.trim(),
         mistake: currentForm.mistake.trim(),
         distraction: currentForm.distraction.trim(),
-        mood_rating: Number(currentForm.mood_rating),
-        energy_rating: Number(currentForm.energy_rating),
+        mood_rating: currentForm.mood_rating != null ? Number(currentForm.mood_rating) : null,
+        energy_rating: currentForm.energy_rating != null ? Number(currentForm.energy_rating) : null,
       };
 
       let responseData;
 
       if (!currentId) {
-        // CREATE
-        const res = await createEveningAPI(payload);
+        // CREATE — send everything
+        const res = await createEveningAPI(fullPayload);
         responseData = res?.data ?? res;
         if (!responseData?.id) throw new Error("Failed to create evening reflection");
         updateEveningId(responseData.id);
         showToast("Evening reflection saved!", "success");
       } else {
-        // UPDATE
-        const res = await updateEveningAPI(currentId, payload);
+        // UPDATE — only send changed fields
+        const patch = {};
+        if (fullPayload.win !== currentSaved.win.trim()) patch.win = fullPayload.win;
+        if (fullPayload.lesson !== currentSaved.lesson.trim()) patch.lesson = fullPayload.lesson;
+        if (fullPayload.mistake !== currentSaved.mistake.trim()) patch.mistake = fullPayload.mistake;
+        if (fullPayload.distraction !== currentSaved.distraction.trim()) patch.distraction = fullPayload.distraction;
+        if (fullPayload.mood_rating !== currentSaved.mood_rating) patch.mood_rating = fullPayload.mood_rating;
+        if (fullPayload.energy_rating !== currentSaved.energy_rating) patch.energy_rating = fullPayload.energy_rating;
+        const res = await updateEveningAPI(currentId, patch);
         responseData = res?.data ?? res;
         showToast("Saved!", "success");
       }
@@ -189,8 +212,8 @@ function EveningReflection() {
         updateSavedForm({ ...synced });
       } else {
         // Fallback: use the trimmed payload as saved baseline
-        updateForm({ ...payload });
-        updateSavedForm({ ...payload });
+        updateForm({ ...fullPayload });
+        updateSavedForm({ ...fullPayload });
       }
 
       return true;
@@ -204,7 +227,8 @@ function EveningReflection() {
 
   // --- Navigation with unsaved-changes guard ---
   const handleNavigate = useCallback((path) => {
-    const changed = JSON.stringify(formRef.current) !== JSON.stringify(savedFormRef.current);
+    const f = formRef.current; const s = savedFormRef.current;
+    const changed = ["win", "lesson", "mistake", "distraction"].some(k => f[k].trim() !== s[k].trim()) || f.mood_rating !== s.mood_rating || f.energy_rating !== s.energy_rating;
     if (changed) {
       pendingNavRef.current = path;
       setShowModal(true);
@@ -234,10 +258,9 @@ function EveningReflection() {
   const moodLabels = ["", "Low", "Fair", "Good", "Great", "Excellent"];
   const energyLabels = ["", "Drained", "Tired", "Steady", "Energised", "Charged"];
 
-  const [editingField, setEditingField] = useState(null);
-  const [expandedFields, setExpandedFields] = useState({});
   const textareaRefs = useRef({});
-  const toggleFieldExpanded = (name) => setExpandedFields(prev => ({ ...prev, [name]: !prev[name] }));
+  const [focusedField, setFocusedField] = useState(null);
+  const [expandedField, setExpandedField] = useState(null);
 
   const saveDisabled = !hasChanges || saving;
 
@@ -278,7 +301,7 @@ function EveningReflection() {
             </div>
           </div>
         </div>
-      ) : <main className="flex-1 flex flex-col overflow-hidden">
+      ) : <main className="flex-1 flex flex-col overflow-hidden" onClick={() => { if (expandedField) setExpandedField(null); }}>
         <div className="px-10 pt-8 pb-4 shrink-0">
           <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-1">Evening Reflection</p>
           <h1 className="text-2xl font-bold text-gray-800 leading-tight">Observe before ending the day</h1>
@@ -293,40 +316,33 @@ function EveningReflection() {
               { name: "mistake", label: "Today's Mistake", placeholder: "What would you do differently?" },
               { name: "distraction", label: "Primary Distraction", placeholder: "What pulled your focus?" },
             ].map(({ name, label, placeholder }) => {
-              const isEditing = editingField === name;
               const text = form[name];
+              const isFocused = focusedField === name;
+              const isExpanded = expandedField === name;
               const isLong = text.length > TEXT_TRUNCATE_LENGTH;
-              const isExpanded = expandedFields[name];
               return (
               <div key={name} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="flex items-center gap-1.5 text-sm font-semibold text-gray-700">{label}</label>
-                  {!isEditing && (
-                    <button onClick={() => setEditingField(name)}
-                      className="p-1.5 rounded-lg text-gray-300 hover:text-blue-600 hover:bg-blue-50 transition">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                  )}
-                </div>
-                {isEditing ? (
+                <label htmlFor={name} className="block text-sm font-semibold text-gray-700 mb-2">{label}</label>
+                {isFocused ? (
                   <textarea
-                    ref={(el) => { textareaRefs.current[name] = el; }}
+                    ref={(el) => { textareaRefs.current[name] = el; if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                     autoFocus
                     id={name}
                     name={name}
                     value={text}
                     onChange={handleChange}
+                    onBlur={() => setFocusedField(null)}
                     placeholder={placeholder}
                     maxLength={2000}
                     rows={2}
-                    style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
-                    onBlur={() => setEditingField(null)}
+                    style={{ resize: "none", overflow: "hidden" }}
                     onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-blue-300 focus:bg-white transition min-h-[72px]"
                   />
                 ) : (
                   <div
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm min-h-[72px]"
+                    onClick={() => { setFocusedField(name); setExpandedField(null); }}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm min-h-[72px] cursor-text"
                   >
                     {text ? (
                       <span className="text-gray-700 whitespace-pre-wrap break-words">
@@ -337,8 +353,8 @@ function EveningReflection() {
                     )}
                   </div>
                 )}
-                {!isEditing && isLong && (
-                  <button onClick={() => toggleFieldExpanded(name)}
+                {!isFocused && isLong && (
+                  <button onClick={(e) => { e.stopPropagation(); setExpandedField(prev => prev === name ? null : name); }}
                     className="text-blue-500 hover:text-blue-600 text-xs font-medium mt-1">
                     {isExpanded ? "show less" : "show more"}
                   </button>
@@ -361,7 +377,7 @@ function EveningReflection() {
                   </button>
                 ))}
               </div>
-              <p className="text-center text-xs font-medium text-blue-500">{moodLabels[form.mood_rating]}</p>
+              <p className="text-center text-xs font-medium text-blue-500">{form.mood_rating != null ? moodLabels[form.mood_rating] : <span className="text-gray-300">Select a rating</span>}</p>
             </div>
 
             <div className="bg-white rounded-2xl border border-blue-100 shadow-sm p-5 flex flex-col justify-between">
@@ -377,7 +393,7 @@ function EveningReflection() {
                   </button>
                 ))}
               </div>
-              <p className="text-center text-xs font-medium text-blue-500">{energyLabels[form.energy_rating]}</p>
+              <p className="text-center text-xs font-medium text-blue-500">{form.energy_rating != null ? energyLabels[form.energy_rating] : <span className="text-gray-300">Select a level</span>}</p>
             </div>
 
             <button

@@ -103,15 +103,14 @@ function SkeletonCard() {
 // ─── Truncated Text ──────────────────────────────────────────────────────────
 const TEXT_TRUNCATE_LENGTH = 150;
 
-function TruncatedText({ text, className }) {
-  const [expanded, setExpanded] = useState(false);
+function TruncatedText({ text, className, isExpanded, onToggle }) {
   if (text.length <= TEXT_TRUNCATE_LENGTH) return <span className={className}>{text}</span>;
   return (
     <span className={className}>
-      {expanded ? text : `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...`}
-      <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+      {isExpanded ? text : `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...`}
+      <button onClick={(e) => { e.stopPropagation(); onToggle(); }}
         className="ml-1 text-blue-500 hover:text-blue-600 text-xs font-medium">
-        {expanded ? "show less" : "show more"}
+        {isExpanded ? "show less" : "show more"}
       </button>
     </span>
   );
@@ -192,12 +191,13 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   const entryDate = firstActivity?.entry_date;
   const isFromYesterday = entryDate ? String(entryDate).split("T")[0] !== today : false;
 
-  const [activities, setActivities] = useState(
-    sortActivities((skill.activities || []).map(a => mapActivity(a, isFromYesterday)))
-  );
+  const initialActivities = sortActivities((skill.activities || []).map(a => mapActivity(a, isFromYesterday)));
+  const [activities, setActivities] = useState(initialActivities);
+  // Snapshot of activities at modal open (updated when add/delete happen since those are immediate)
+  const savedActivitiesRef = useRef(initialActivities.map(a => ({ ...a })));
+
   const [newActivityName, setNewActivityName] = useState("");
   const [newActivityError, setNewActivityError] = useState("");
-  const [newMinutes, setNewMinutes] = useState("");
 
   // Full edit state per activity
   const [editingActivityId, setEditingActivityId] = useState(null);
@@ -213,7 +213,9 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   const [skillName, setSkillName] = useState(skill.name || "");
   const [skillNameError, setSkillNameError] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [expandedActivityId, setExpandedActivityId] = useState(null);
   const savingRef = useRef(false);
+  const closingRef = useRef(false);
 
   const allDone = activities.length > 0 && activities.every(a => a.is_completed);
   const doneCount = activities.filter(a => a.is_completed).length;
@@ -221,61 +223,101 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
 
   useEffect(() => { onActivitiesChanged(skill.id, activities); }, [activities]);
 
+  // ── Flush changed activities to backend on close ──
+  const flushChanges = async (currentActivities) => {
+    const saved = savedActivitiesRef.current;
+    const patches = [];
+    for (const a of currentActivities) {
+      const orig = saved.find(s => s.id === a.id);
+      if (!orig) continue; // newly added — already POSTed
+      const diff = { id: a.id };
+      let hasDiff = false;
+      if (a.name.trim() !== orig.name.trim()) { diff.name = a.name.trim(); hasDiff = true; }
+      if (a.is_completed !== orig.is_completed) { diff.is_completed = a.is_completed; hasDiff = true; }
+      if (a.is_priority !== orig.is_priority) { diff.is_priority = a.is_priority; hasDiff = true; }
+      if (a.is_habit_to_protect !== orig.is_habit_to_protect) { diff.is_habit_to_protect = a.is_habit_to_protect; hasDiff = true; }
+      if (a.minutes_practised !== orig.minutes_practised) { diff.minutes_practised = a.minutes_practised; hasDiff = true; }
+      if (hasDiff) patches.push(diff);
+    }
+    try {
+      if (patches.length > 0) {
+        await updateSkillActivitiesAPI(skill.id, { activities: patches });
+      }
+      // Check if skill should be marked complete
+      if (currentActivities.length > 0 && currentActivities.every(a => a.is_completed)) {
+        await updateSkillAPI(skill.id, { is_completed: true });
+        onSkillUpdated(skill.id, { is_completed: true });
+      }
+      // Check if skill name changed
+      if (skillName.trim() && skillName.trim() !== skill.name.trim()) {
+        await updateSkillAPI(skill.id, { name: skillName.trim() });
+        onSkillUpdated(skill.id, { name: skillName.trim() });
+      }
+    } catch (err) {
+      console.error("Flush changes failed:", err);
+    }
+  };
+
+  const handleClose = async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    await flushChanges(activities);
+    onClose();
+  };
+
+  // Use refs so Escape/backdrop handlers always see latest state
+  const activitiesRef = useRef(activities);
+  useEffect(() => { activitiesRef.current = activities; }, [activities]);
+  const skillNameRef = useRef(skillName);
+  useEffect(() => { skillNameRef.current = skillName; }, [skillName]);
+
   useEffect(() => {
     const handler = (e) => {
       if (e.key === "Escape") {
         if (editingTitle || editingActivityId || minutesEditId) return;
-        onClose();
+        handleCloseViaRef();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [editingTitle, editingActivityId, minutesEditId]);
 
-  const toggleDone = async (id) => {
-    const target = activities.find(a => a.id === id);
-    const newVal = !target.is_completed;
-    setActivities(prev => prev.map(a => a.id === id ? { ...a, is_completed: newVal } : a));
-    try {
-      await updateSkillActivitiesAPI(skill.id, { activities: [{ id, is_completed: newVal }] });
-      const updated = activities.map(a => a.id === id ? { ...a, is_completed: newVal } : a);
-      if (updated.every(a => a.is_completed) && updated.length > 0) {
-        await updateSkillAPI(skill.id, { name: skillName, is_completed: true });
-        onSkillUpdated(skill.id, { is_completed: true });
-      }
-    } catch (err) {
-      console.error("Toggle done failed:", err);
-      setActivities(prev => prev.map(a => a.id === id ? { ...a, is_completed: !newVal } : a));
-    }
+  const handleCloseViaRef = async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    await flushChanges(activitiesRef.current);
+    onClose();
   };
 
-  const togglePriority = async (id) => {
-    const current = activities.find(a => a.id === id);
-    const updated = activities.map(a => ({ ...a, is_priority: a.id === id ? !current.is_priority : false }));
-    setActivities(sortActivities(updated));
-    try {
-      await updateSkillActivitiesAPI(skill.id, { activities: updated.map(a => ({ id: a.id, is_priority: a.is_priority })) });
-    } catch (err) { console.error("Toggle priority failed:", err); }
+  // ── Local-only toggles (no API calls) ──
+  const toggleDone = (id) => {
+    setActivities(prev => prev.map(a => {
+      if (a.id !== id) return a;
+      const nowCompleted = !a.is_completed;
+      return { ...a, is_completed: nowCompleted, minutes_practised: nowCompleted ? a.minutes_practised : 0 };
+    }));
+    setMinutesEditId(prev => prev === id ? null : prev);
   };
 
-  const toggleHabit = async (id) => {
-    const current = activities.find(a => a.id === id);
-    const updated = activities.map(a => ({ ...a, is_habit_to_protect: a.id === id ? !current.is_habit_to_protect : false }));
-    setActivities(sortActivities(updated));
-    try {
-      await updateSkillActivitiesAPI(skill.id, { activities: updated.map(a => ({ id: a.id, is_habit_to_protect: a.is_habit_to_protect })) });
-    } catch (err) { console.error("Toggle habit failed:", err); }
+  const togglePriority = (id) => {
+    setActivities(prev => {
+      const current = prev.find(a => a.id === id);
+      return sortActivities(prev.map(a => ({ ...a, is_priority: a.id === id ? !current.is_priority : false })));
+    });
   };
 
+  const toggleHabit = (id) => {
+    setActivities(prev => {
+      const current = prev.find(a => a.id === id);
+      return sortActivities(prev.map(a => ({ ...a, is_habit_to_protect: a.id === id ? !current.is_habit_to_protect : false })));
+    });
+  };
+
+  // ── Add activity — still immediate (needs server ID), always 0 minutes ──
   const addActivity = async () => {
     if (savingRef.current) return;
     const nameErr = validateText(newActivityName, "Activity name");
     if (nameErr) { setNewActivityError(nameErr); return; }
-    const mins = newMinutes === "" ? 0 : parseInt(newMinutes, 10);
-    if (newMinutes !== "" && (isNaN(mins) || mins < 0 || mins > 1440)) {
-      setNewActivityError("Minutes must be between 0 and 1440");
-      return;
-    }
     setNewActivityError("");
     savingRef.current = true;
     try {
@@ -285,7 +327,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
           is_priority: false,
           is_habit_to_protect: false,
           is_completed: false,
-          minutes_practised: mins,
+          minutes_practised: 0,
         }]
       });
       const created = res?.data?.activities || res?.activities || [];
@@ -297,13 +339,13 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
           is_completed: false,
           is_priority: false,
           is_habit_to_protect: false,
-          minutes_practised: mins,
+          minutes_practised: 0,
           isCarriedOver: false,
         };
         setActivities(prev => sortActivities([newItem, ...prev]));
+        savedActivitiesRef.current = [{ ...newItem }, ...savedActivitiesRef.current];
       }
       setNewActivityName("");
-      setNewMinutes("");
     } catch (err) {
       console.error("Add activity failed:", err);
       showToast("Failed to add activity", "error");
@@ -313,14 +355,15 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
   };
 
   const startEdit = (a) => {
-    setMinutesEditId(null); // close any inline minutes edit
+    setMinutesEditId(null);
     setEditingActivityId(a.id);
     setEditText(a.name);
     setEditTextError("");
     setEditMinutes(a.minutes_practised > 0 ? String(a.minutes_practised) : "");
   };
 
-  const saveEdit = async (id) => {
+  // ── Save edit locally only ──
+  const saveEdit = (id) => {
     const nameErr = validateText(editText, "Activity name");
     if (nameErr) { setEditTextError(nameErr); return; }
     const mins = editMinutes === "" ? 0 : parseInt(editMinutes, 10);
@@ -328,15 +371,11 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
       setEditTextError("Minutes must be between 0 and 1440");
       return;
     }
-    const updated = activities.map(a =>
+    setActivities(prev => sortActivities(prev.map(a =>
       a.id === id ? { ...a, name: editText.trim(), minutes_practised: mins } : a
-    );
-    setActivities(sortActivities(updated));
+    )));
     setEditingActivityId(null);
     setEditTextError("");
-    try {
-      await updateSkillActivitiesAPI(skill.id, { activities: [{ id, name: editText.trim(), minutes_practised: mins }] });
-    } catch (err) { console.error("Edit failed:", err); }
   };
 
   const cancelEdit = () => {
@@ -345,41 +384,35 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
     setEditMinutes("");
   };
 
-  // ── Inline minutes-only save ──────────────────────────────────────────────
-  const saveInlineMinutes = async (id) => {
-    const current = activities.find(a => a.id === id);
-    const currentMins = current?.minutes_practised || 0;
+  // ── Inline minutes — local only ──
+  const saveInlineMinutes = (id) => {
     const mins = minutesEditVal === "" ? 0 : parseInt(minutesEditVal, 10);
     if (minutesEditVal !== "" && (isNaN(mins) || mins < 0 || mins > 1440)) {
       setMinutesEditId(null);
       return;
     }
     setMinutesEditId(null);
-    if (mins === currentMins) return;
     setActivities(prev => prev.map(a => a.id === id ? { ...a, minutes_practised: mins } : a));
-    try {
-      await updateSkillActivitiesAPI(skill.id, { activities: [{ id, minutes_practised: mins }] });
-    } catch (err) { console.error("Inline minutes save failed:", err); }
   };
 
+  // ── Delete — still immediate (server resource destruction) ──
   const doDeleteActivity = async () => {
     try {
       await deleteSkillActivityAPI(skill.id, deleteTarget.id);
       setActivities(prev => sortActivities(prev.filter(a => a.id !== deleteTarget.id)));
+      // Remove from saved snapshot too
+      savedActivitiesRef.current = savedActivitiesRef.current.filter(a => a.id !== deleteTarget.id);
     } catch (err) { console.error("Delete failed:", err); }
     setDeleteTarget(null);
   };
 
-  const saveSkillName = async () => {
+  // ── Skill name — local only, flushed on close ──
+  const saveSkillName = () => {
     const trimmed = skillName.trim();
     if (!trimmed || trimmed.length < MIN_CHARS) { setSkillNameError(`Skill name must be at least ${MIN_CHARS} characters`); return; }
     if (trimmed.length > SKILL_NAME_MAX) { setSkillNameError(`Skill name cannot exceed ${SKILL_NAME_MAX} characters`); return; }
     setSkillNameError("");
     setEditingTitle(false);
-    try {
-      await updateSkillAPI(skill.id, { name: skillName.trim() });
-      onSkillUpdated(skill.id, { name: skillName.trim() });
-    } catch (err) { console.error("Rename failed:", err); }
   };
 
   return (
@@ -395,7 +428,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
       <div
         className="fixed inset-0 z-50 flex items-center justify-center"
         style={{ background: "rgba(0,0,0,0.4)" }}
-        onClick={onClose}
+        onClick={handleClose}
       >
         <div
           className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
@@ -438,7 +471,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                 {isFromYesterday && !allDone && <span className="text-[10px] font-medium text-amber-500">Carried over from yesterday</span>}
               </div>
             </div>
-            <button onClick={onClose} className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition shrink-0">
+            <button onClick={handleClose} className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition shrink-0 cursor-pointer">
               <CloseIcon />
             </button>
           </div>
@@ -447,29 +480,18 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
           <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex gap-2 items-start">
               <div className="flex-1 flex flex-col gap-1">
-                <input
+                <textarea
                   value={newActivityName}
                   onChange={e => { setNewActivityName(e.target.value); if (newActivityError) setNewActivityError(""); }}
-                  onKeyDown={e => e.key === "Enter" && addActivity()}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addActivity(); } }}
+                  onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                   placeholder="Activity name..."
                   maxLength={MAX_CHARS}
-                  className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-white border-gray-200 focus:border-blue-300"}`}
+                  rows={1}
+                  style={{ resize: "none", overflow: "hidden" }}
+                  className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition min-h-[40px] ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-white border-gray-200 focus:border-blue-300"}`}
                 />
                 {newActivityError && <p className="text-red-500 text-xs font-medium">{newActivityError}</p>}
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0 bg-white border border-gray-200 rounded-xl px-3 py-2.5 focus-within:border-blue-300 transition" style={{ width: "100px" }}>
-                <ClockIcon />
-                <input
-                  type="number"
-                  value={newMinutes}
-                  onChange={e => setNewMinutes(sanitizeMinutesInput(e.target.value))}
-                  onKeyDown={blockInvalidMinutesKeys}
-                  placeholder="mins"
-                  min={0}
-                  max={1440}
-                  className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
-                />
               </div>
 
               <button
@@ -485,7 +507,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
           </div>
 
           {/* Activities list */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2">
+          <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2" onClick={() => { if (expandedActivityId) setExpandedActivityId(null); }}>
             {activities.length === 0 && (
               <p className="text-gray-300 text-sm text-center py-8">No activities yet. Add one above.</p>
             )}
@@ -499,38 +521,39 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                 }`}
               >
                 {editingActivityId === a.id ? (
-                  /* ── Full edit mode ── */
-                  <div className="flex flex-col gap-2">
-                    <div className="flex gap-2 items-start">
-                      <div className="flex-1 flex flex-col gap-1">
-                        <input
-                          autoFocus
-                          value={editText}
-                          onChange={e => { setEditText(e.target.value); setEditTextError(""); }}
-                          onKeyDown={e => { if (e.key === "Enter") saveEdit(a.id); if (e.key === "Escape") cancelEdit(); }}
-                          maxLength={MAX_CHARS}
-                          className={`w-full text-sm border rounded-lg px-2.5 py-1.5 outline-none text-gray-700 ${editTextError ? "border-red-400 bg-red-50" : "bg-white border-blue-300 focus:border-blue-400"}`}
-                        />
-                        {editTextError && <p className="text-red-500 text-xs">{editTextError}</p>}
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus-within:border-blue-300 transition" style={{ width: "90px" }}>
-                        <ClockIcon />
-                        <input
-                          type="number"
-                          value={editMinutes}
-                          onChange={e => setEditMinutes(sanitizeMinutesInput(e.target.value))}
-                          onKeyDown={blockInvalidMinutesKeys}
-                          placeholder="mins"
-                          min={0}
-                          max={1440}
-                          className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
-                        />
-                      </div>
+                  /* ── Edit mode — saves on blur (like morning) ── */
+                  <div className="flex gap-2 items-start"
+                    onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) saveEdit(a.id); }}>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <textarea
+                        autoFocus
+                        ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                        value={editText}
+                        onChange={e => { setEditText(e.target.value); setEditTextError(""); }}
+                        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(a.id); } if (e.key === "Escape") cancelEdit(); }}
+                        onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                        maxLength={MAX_CHARS}
+                        rows={1}
+                        style={{ resize: "none", overflow: "hidden" }}
+                        className={`w-full text-sm border rounded-lg px-2.5 py-1.5 outline-none text-gray-700 min-h-[32px] ${editTextError ? "border-red-400 bg-red-50" : "bg-white border-blue-300 focus:border-blue-400"}`}
+                      />
+                      {editTextError && <p className="text-red-500 text-xs">{editTextError}</p>}
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => saveEdit(a.id)} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition">Save</button>
-                      <button onClick={cancelEdit} className="px-3 py-1 border border-gray-200 text-gray-500 text-xs font-medium rounded-lg hover:bg-gray-50 transition">Cancel</button>
+                    {a.is_completed && (
+                    <div className="flex items-center gap-1.5 shrink-0 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus-within:border-blue-300 transition" style={{ width: "90px" }}>
+                      <ClockIcon />
+                      <input
+                        type="number"
+                        value={editMinutes}
+                        onChange={e => setEditMinutes(sanitizeMinutesInput(e.target.value))}
+                        onKeyDown={e => { blockInvalidMinutesKeys(e); if (e.key === "Enter") saveEdit(a.id); if (e.key === "Escape") cancelEdit(); }}
+                        placeholder="mins"
+                        min={0}
+                        max={1440}
+                        className="w-full text-sm text-gray-600 outline-none bg-transparent placeholder-gray-300"
+                      />
                     </div>
+                    )}
                   </div>
                 ) : (
                   /* ── View mode ── */
@@ -544,7 +567,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                         {a.is_completed && <CheckIcon />}
                       </button>
                       <span className={`flex-1 text-sm break-words whitespace-pre-wrap ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
-                        <TruncatedText text={a.name} className="" />
+                        <TruncatedText text={a.name} className="" isExpanded={expandedActivityId === a.id} onToggle={() => setExpandedActivityId(prev => prev === a.id ? null : a.id)} />
                         {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                       </span>
                     </div>
@@ -563,7 +586,8 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
 
                       {/* ── Inline editable minutes pill ── */}
                       <div className="flex-1 flex justify-center">
-                        {minutesEditId === a.id ? (
+                        {a.is_completed ? (
+                        minutesEditId === a.id ? (
                           <div className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 focus-within:border-violet-400 transition" style={{ width: "88px" }}>
                             <ClockIcon size={11} />
                             <input
@@ -600,7 +624,8 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                               {a.minutes_practised > 0 ? formatMins(a.minutes_practised) : "add time"}
                             </button>
                           </Tooltip>
-                        )}
+                        )
+                        ) : null}
                       </div>
 
                       <Tooltip text="Delete">
