@@ -87,17 +87,28 @@ function EveningReflection() {
   // --- Load evening on mount ---
   useEffect(() => {
     (async () => {
+      const today = getToday();
+      const cacheKey = `evening_${today}`;
+
+      // Skip GET if we already confirmed no evening exists for today
+      if (sessionStorage.getItem(cacheKey) === "none") {
+        setPageReady(true);
+        return;
+      }
+
       try {
-        const res = await getEveningAPI(getToday());
+        const res = await getEveningAPI(today);
         const data = res?.data ?? res;
         if (data?.id) {
           updateEveningId(data.id);
+          sessionStorage.setItem(cacheKey, data.id);
           const loaded = buildFormFromData(data);
           updateForm(loaded);
           updateSavedForm({ ...loaded });
         }
       } catch {
         // No evening for today — that's fine, start fresh
+        sessionStorage.setItem(cacheKey, "none");
       } finally {
         setPageReady(true);
       }
@@ -190,6 +201,7 @@ function EveningReflection() {
         responseData = res?.data ?? res;
         if (!responseData?.id) throw new Error("Failed to create evening reflection");
         updateEveningId(responseData.id);
+        sessionStorage.setItem(`evening_${getToday()}`, responseData.id);
         showToast("Evening reflection saved!", "success");
       } else {
         // UPDATE — only send changed fields
@@ -335,7 +347,7 @@ function EveningReflection() {
                     placeholder={placeholder}
                     maxLength={2000}
                     rows={2}
-                    style={{ resize: "none", overflow: "hidden" }}
+                    style={{ resize: "none", overflow: "hidden", overflowWrap: "break-word" }}
                     onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none focus:border-blue-300 focus:bg-white transition min-h-[72px]"
                   />
@@ -345,7 +357,7 @@ function EveningReflection() {
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm min-h-[72px] cursor-text"
                   >
                     {text ? (
-                      <span className="text-gray-700 whitespace-pre-wrap break-words">
+                      <span className="text-gray-700 break-all">
                         {isLong && !isExpanded ? `${text.slice(0, TEXT_TRUNCATE_LENGTH)}...` : text}
                       </span>
                     ) : (

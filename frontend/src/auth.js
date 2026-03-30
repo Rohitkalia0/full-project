@@ -1,13 +1,14 @@
-export const setToken = (token) => localStorage.setItem("access_token", token);
-export const getToken = () => localStorage.getItem("access_token");
-export const isAuthenticated = () => !!localStorage.getItem("access_token");
+import { logoutAPI } from "./api";
 
-export const logout = () => {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-  localStorage.removeItem("user_email");
-  localStorage.removeItem("first_name");
-  localStorage.removeItem("last_name");
-  localStorage.removeItem("photo_url");
+export const isAuthenticated = () => !!localStorage.getItem("is_logged_in");
+
+export const logout = async () => {
+  try {
+    await logoutAPI();
+  } catch {
+    // ignore — still clear local state
+  }
+  localStorage.removeItem("is_logged_in");
+  sessionStorage.clear();
   window.location.href = "/login";
 };

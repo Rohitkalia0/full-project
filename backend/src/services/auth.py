@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from src.exceptions import DomainException
 from src.models.refresh_token import RefreshToken
 from src.models.user import User
-from src.schemas.api_response import SuccessResponse
-from src.schemas.auth import LoginRequest, RefreshTokenRequest, SignupRequest, TokenResponse
+from src.schemas.auth import LoginRequest, RefreshTokenRequest, SignupRequest
 from src.schemas.user import UserResponse
 from src.utils.hashing import hash_password, verify_password
 from src.utils.jwt_handler import JWTToken, create_token, decode_token
@@ -41,7 +40,7 @@ def signup(
 def login(
 	payload: LoginRequest,
 	db: Session
-) -> TokenResponse:
+) -> dict:
 
 	stmt = select(User).where(User.email == payload.email)
 	user_data = db.scalar(stmt)
@@ -66,11 +65,10 @@ def login(
 	db.flush()
 	db.refresh(refresh_token_data)
 
-	return TokenResponse(
-		token_type="Bearer",
-		access_token=access_token,
-		refresh_token=refresh_token
-	)
+	return {
+		"access_token": access_token,
+		"refresh_token": refresh_token,
+	}
 
 
 def logout(
@@ -107,9 +105,9 @@ def logout(
 def refresh(
 	payload: RefreshTokenRequest,
 	db: Session
-) -> TokenResponse:
+) -> dict:
 	user_id = logout(payload, db).id
-		
+
 	_, access_token = create_token(user_id, JWTToken.ACCESS_TOKEN)
 	refresh_token_payload, refresh_token = create_token(user_id, JWTToken.REFRESH_TOKEN)
 
@@ -124,9 +122,8 @@ def refresh(
 	db.flush()
 	db.refresh(refresh_token_data)
 
-	return TokenResponse(
-		token_type="Bearer",
-		access_token=access_token,
-		refresh_token=refresh_token
-	)
+	return {
+		"access_token": access_token,
+		"refresh_token": refresh_token,
+	}
 	

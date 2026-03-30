@@ -488,7 +488,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                   placeholder="Activity name..."
                   maxLength={MAX_CHARS}
                   rows={1}
-                  style={{ resize: "none", overflow: "hidden" }}
+                  style={{ resize: "none", overflow: "hidden", overflowWrap: "break-word" }}
                   className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition min-h-[40px] ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-white border-gray-200 focus:border-blue-300"}`}
                 />
                 {newActivityError && <p className="text-red-500 text-xs font-medium">{newActivityError}</p>}
@@ -534,7 +534,7 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                         onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                         maxLength={MAX_CHARS}
                         rows={1}
-                        style={{ resize: "none", overflow: "hidden" }}
+                        style={{ resize: "none", overflow: "hidden", overflowWrap: "break-word" }}
                         className={`w-full text-sm border rounded-lg px-2.5 py-1.5 outline-none text-gray-700 min-h-[32px] ${editTextError ? "border-red-400 bg-red-50" : "bg-white border-blue-300 focus:border-blue-400"}`}
                       />
                       {editTextError && <p className="text-red-500 text-xs">{editTextError}</p>}
@@ -559,14 +559,14 @@ function SkillModal({ skill, today, onClose, onSkillUpdated, onActivitiesChanged
                   /* ── View mode ── */
                   <>
                     {/* Activity name row */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 overflow-hidden">
                       <button
                         onClick={() => toggleDone(a.id)}
                         className={`min-w-[20px] min-h-[20px] w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${a.is_completed ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 hover:border-blue-400"}`}
                       >
                         {a.is_completed && <CheckIcon />}
                       </button>
-                      <span className={`flex-1 text-sm break-words whitespace-pre-wrap ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
+                      <span className={`flex-1 text-sm break-all min-w-0 overflow-hidden ${a.is_completed ? "line-through text-gray-400" : "text-gray-700"}`}>
                         <TruncatedText text={a.name} className="" isExpanded={expandedActivityId === a.id} onToggle={() => setExpandedActivityId(prev => prev === a.id ? null : a.id)} />
                         {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                       </span>

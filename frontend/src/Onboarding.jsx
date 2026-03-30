@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { updateUserAPI, uploadPhotoAPI, createSettingAPI } from "./api";
+import { useUser } from "./UserContext";
 
 function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
@@ -16,6 +17,16 @@ function Toast({ message, type, onClose }) {
   );
 }
 
+const formatTime = (time) => !time ? null : time.length === 5 ? `${time}:00` : time;
+
+const formatDisplay = (time) => {
+  if (!time) return "";
+  const [h, m] = time.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+};
+
 const DefaultAvatar = () => (
   <svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
     <rect width="128" height="128" fill="#e5e7eb"/>
@@ -26,6 +37,7 @@ const DefaultAvatar = () => (
 
 function Onboarding() {
   const navigate = useNavigate();
+  const { updateUser } = useUser();
   const [toast, setToast] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -36,7 +48,7 @@ function Onboarding() {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const handleChange = (e) => setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
@@ -45,24 +57,18 @@ function Onboarding() {
 
   const removePhoto = () => { setPhotoFile(null); setPhotoPreview(null); };
 
-  const formatTime = (time) => !time ? null : time.length === 5 ? `${time}:00` : time;
-
-  const formatDisplay = (time) => {
-    if (!time) return "";
-    const [h, m] = time.split(":").map(Number);
-    const period = h >= 12 ? "PM" : "AM";
-    const hour = h % 12 || 12;
-    return `${hour}:${String(m).padStart(2, "0")} ${period}`;
-  };
-
   const handleSubmit = async () => {
     if (submitting) return;
     try {
+      const lettersOnly = /^[a-zA-Z]+$/;
       if (!form.firstName.trim() || form.firstName.trim().length < 2) {
         setToast({ message: "First name must be at least 2 characters", type: "error" }); return;
       }
       if (form.firstName.trim().length > 20) {
         setToast({ message: "First name cannot exceed 20 characters", type: "error" }); return;
+      }
+      if (!lettersOnly.test(form.firstName.trim())) {
+        setToast({ message: "First name can only contain letters", type: "error" }); return;
       }
       if (form.lastName.trim() && form.lastName.trim().length < 2) {
         setToast({ message: "Last name must be at least 2 characters", type: "error" }); return;
@@ -70,14 +76,30 @@ function Onboarding() {
       if (form.lastName.trim().length > 20) {
         setToast({ message: "Last name cannot exceed 20 characters", type: "error" }); return;
       }
-      if (form.morningEnd <= form.morningStart) {
+      if (form.lastName.trim() && !lettersOnly.test(form.lastName.trim())) {
+        setToast({ message: "Last name can only contain letters", type: "error" }); return;
+      }
+      const toMins = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+      const mStart = toMins(form.morningStart), mEnd = toMins(form.morningEnd);
+      const eStart = toMins(form.eveningStart), eEnd = toMins(form.eveningEnd);
+
+      if (mEnd <= mStart) {
         setToast({ message: "Morning end time must be after start time", type: "error" }); return;
       }
-      if (form.eveningEnd <= form.eveningStart) {
+      if (mEnd - mStart < 60) {
+        setToast({ message: "Morning block must be at least 1 hour", type: "error" }); return;
+      }
+      if (eEnd <= eStart) {
         setToast({ message: "Evening end time must be after start time", type: "error" }); return;
       }
-      if (form.morningEnd > form.eveningStart) {
-        setToast({ message: "Morning and evening windows must not overlap", type: "error" }); return;
+      if (eEnd - eStart < 60) {
+        setToast({ message: "Evening block must be at least 1 hour", type: "error" }); return;
+      }
+      if (eStart <= mEnd) {
+        setToast({ message: "Evening must start after morning ends", type: "error" }); return;
+      }
+      if (eStart - mEnd < 240) {
+        setToast({ message: "At least 4 hours gap required between morning end and evening start", type: "error" }); return;
       }
 
       setSubmitting(true);
@@ -86,27 +108,29 @@ function Onboarding() {
       if (form.lastName.trim()) userPayload.last_name = form.lastName.trim();
 
       await updateUserAPI(userPayload);
-      localStorage.setItem("first_name", form.firstName.trim());
-      if (form.lastName.trim()) localStorage.setItem("last_name", form.lastName.trim());
 
-      if (photoFile) {
-        // Get the URL from backend response
-        const photoRes = await uploadPhotoAPI(photoFile);
+      const userUpdates = { firstName: form.firstName.trim(), lastName: form.lastName.trim() };
+
+      // Photo upload and settings creation are independent — run in parallel
+      const [photoRes] = await Promise.all([
+        photoFile ? uploadPhotoAPI(photoFile) : Promise.resolve(null),
+        createSettingAPI({
+          morning_start_time: formatTime(form.morningStart),
+          morning_end_time: formatTime(form.morningEnd),
+          evening_start_time: formatTime(form.eveningStart),
+          evening_end_time: formatTime(form.eveningEnd),
+          is_morning_reminder_enabled: true,
+          is_evening_reminder_enabled: true
+        }),
+      ]);
+
+      if (photoRes) {
         const photoData = photoRes?.data ?? photoRes;
         const backendUrl = photoData?.profile_pic_url ?? null;
-        if (backendUrl) {
-          localStorage.setItem("photo_url", backendUrl);
-        }
+        if (backendUrl) userUpdates.photoUrl = backendUrl;
       }
 
-      await createSettingAPI({
-        morning_start_time: formatTime(form.morningStart),
-        morning_end_time: formatTime(form.morningEnd),
-        evening_start_time: formatTime(form.eveningStart),
-        evening_end_time: formatTime(form.eveningEnd),
-        is_morning_reminder_enabled: true,
-        is_evening_reminder_enabled: true
-      });
+      updateUser(userUpdates);
 
       navigate("/morning-checkin", { replace: true });
     } catch (err) {
