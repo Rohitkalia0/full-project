@@ -1,9 +1,15 @@
+from http import HTTPStatus
+
+from fastapi import Request, Response
 from sqlalchemy.orm import Session
 
 import src.services.auth as services
+from src.exceptions import DomainException
 from src.schemas.api_response import SuccessResponse
-from src.schemas.auth import LoginRequest, RefreshTokenRequest, SignupRequest, TokenResponse
+from src.schemas.auth import LoginRequest, RefreshTokenRequest, SignupRequest
 from src.schemas.user import UserResponse
+from src.core.config import settings
+
 
 
 def signup(
@@ -23,45 +29,60 @@ def signup(
 
 def login(
     payload: LoginRequest,
-    db: Session
-) -> SuccessResponse[TokenResponse]:
-	token_data = services.login(
-		payload,
-		db
-	)
+    db: Session,
+    response: Response,
+) -> SuccessResponse:
+	tokens = services.login(payload, db)
 
-	return SuccessResponse[TokenResponse](
+	response.set_cookie("access_token", tokens["access_token"], httponly=True, samesite="none", secure=True, path="/", max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+	response.set_cookie("refresh_token", tokens["refresh_token"], httponly=True, samesite="none", secure=True, path="/", max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)
+
+	return SuccessResponse(
 		message="User logged in.",
-		data=token_data
 	)
 
 
 def logout(
-	payload: RefreshTokenRequest,
-	db: Session
+	request: Request,
+	db: Session,
+	response: Response,
 ) -> SuccessResponse:
-	_ = services.logout(
-		payload,
-		db
-	)
-	
+	refresh_token = request.cookies.get("refresh_token")
+	if not refresh_token:
+		raise DomainException(
+			status_code=HTTPStatus.UNAUTHORIZED,
+			message="No refresh token provided"
+		)
+
+	payload = RefreshTokenRequest(refresh_token=refresh_token)
+	_ = services.logout(payload, db)
+
+	response.delete_cookie("access_token", httponly=True, samesite="none", secure=True, path="/")
+	response.delete_cookie("refresh_token", httponly=True, samesite="none", secure=True, path="/")
+
 	return SuccessResponse(
 		message="user successfully logout"
 	)
 
 
 def refresh(
-	payload: RefreshTokenRequest,
-	db: Session
-) -> SuccessResponse[TokenResponse]:
-	token_data = services.refresh(
-		payload,
-		db
-	)
-	
-	return SuccessResponse[TokenResponse](
-		message="new access token generated for user",
-		data=token_data
-	)
-	
+	request: Request,
+	db: Session,
+	response: Response,
+) -> SuccessResponse:
+	refresh_token = request.cookies.get("refresh_token")
+	if not refresh_token:
+		raise DomainException(
+			status_code=HTTPStatus.UNAUTHORIZED,
+			message="No refresh token provided"
+		)
 
+	payload = RefreshTokenRequest(refresh_token=refresh_token)
+	tokens = services.refresh(payload, db)
+
+	response.set_cookie("access_token", tokens["access_token"], httponly=True, samesite="none", secure=True, path="/", max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+	response.set_cookie("refresh_token", tokens["refresh_token"], httponly=True, samesite="none", secure=True, path="/", max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60)
+
+	return SuccessResponse(
+		message="new access token generated for user",
+	)

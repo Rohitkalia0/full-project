@@ -1,21 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { updateUserAPI, uploadPhotoAPI, getSettingAPI, updateSettingAPI, getUserAPI,removePhotoAPI } from "./api";
+import { updateUserAPI, uploadPhotoAPI, getSettingAPI, updateSettingAPI, getUserAPI, removePhotoAPI } from "./api";
 import Sidebar from "./Sidebar";
+import { useUser } from "./UserContext";
 
 const PencilIcon = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);
 const DefaultAvatar = () => (<svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full"><rect width="128" height="128" fill="#e5e7eb"/><circle cx="64" cy="49" r="22" fill="#9ca3af"/><ellipse cx="64" cy="103" rx="36" ry="22" fill="#9ca3af"/></svg>);
-
-// Helper — update localStorage AND fire storage event so Sidebar refreshes
-const setLocalStorageItem = (key, value) => {
-  localStorage.setItem(key, value);
-  window.dispatchEvent(new Event("storage"));
-};
-
-const removeLocalStorageItem = (key) => {
-  localStorage.removeItem(key);
-  window.dispatchEvent(new Event("storage"));
-};
 
 function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
@@ -86,10 +76,11 @@ function Settings() {
   const navigate = useNavigate();
   const pendingNavRef = useRef(null);
   const [pageReady, setPageReady] = useState(false);
+  const { user, updateUser } = useUser();
 
-  const [firstName, setFirstName] = useState(localStorage.getItem("first_name") || "");
-  const [lastName, setLastName] = useState(localStorage.getItem("last_name") || "");
-  const [photoUrl, setPhotoUrl] = useState(localStorage.getItem("photo_url") || null);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [photoUrl, setPhotoUrl] = useState(null);
   const [rhythm, setRhythm] = useState({ morningStart: "", morningEnd: "", eveningStart: "", eveningEnd: "" });
 
   const [editing, setEditing] = useState(false);
@@ -108,32 +99,30 @@ function Settings() {
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
-    try {
-      const res = await getSettingAPI();
-      const d = res?.data ?? res;
+    const [settingRes, userRes] = await Promise.allSettled([getSettingAPI(), getUserAPI()]);
+
+    if (settingRes.status === "fulfilled") {
+      const d = settingRes.value?.data ?? settingRes.value;
       setRhythm({
         morningStart: toInputTime(d.morning_start_time),
         morningEnd: toInputTime(d.morning_end_time),
         eveningStart: toInputTime(d.evening_start_time),
         eveningEnd: toInputTime(d.evening_end_time),
       });
-    } catch (err) { console.error("loadSettings failed:", err.message); }
+    }
 
-    try {
-      const userRes = await getUserAPI();
-      const user = userRes?.data ?? userRes;
-      setFirstName(user?.first_name || "");
-      setLocalStorageItem("first_name", user?.first_name || "");
-      setLastName(user?.last_name || "");
-      setLocalStorageItem("last_name", user?.last_name || "");
-      if (user?.profile_pic_url) {
-        setPhotoUrl(user.profile_pic_url);
-        setLocalStorageItem("photo_url", user.profile_pic_url);
-      } else {
-        setPhotoUrl(null);
-        removeLocalStorageItem("photo_url");
-      }
-    } catch (err) { console.error("loadUser failed:", err.message); }
+    if (userRes.status === "fulfilled") {
+      const u = userRes.value?.data ?? userRes.value;
+      setFirstName(u?.first_name || "");
+      setLastName(u?.last_name || "");
+      setPhotoUrl(u?.profile_pic_url || null);
+      updateUser({
+        firstName: u?.first_name || "",
+        lastName: u?.last_name || "",
+        email: u?.email || "",
+        photoUrl: u?.profile_pic_url || null,
+      });
+    }
 
     setPageReady(true);
   };
@@ -169,19 +158,41 @@ function Settings() {
     if (!r.morningEnd) errs.morningEnd = "Required";
     if (!r.eveningStart) errs.eveningStart = "Required";
     if (!r.eveningEnd) errs.eveningEnd = "Required";
-    if (r.morningStart && r.morningEnd && r.morningEnd <= r.morningStart) errs.morningEnd = "End must be after start";
-    if (r.eveningStart && r.eveningEnd && r.eveningEnd <= r.eveningStart) errs.eveningEnd = "End must be after start";
-    if (r.morningEnd && r.eveningStart && r.morningEnd > r.eveningStart) errs.eveningStart = "Evening must start after morning ends";
+    if (Object.keys(errs).length > 0) return errs;
+
+    const toMins = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+    const mStart = toMins(r.morningStart), mEnd = toMins(r.morningEnd);
+    const eStart = toMins(r.eveningStart), eEnd = toMins(r.eveningEnd);
+
+    if (mEnd <= mStart) errs.morningEnd = "End must be after start";
+    else if (mEnd - mStart < 60) errs.morningEnd = "Morning block must be at least 1 hour";
+
+    if (eEnd <= eStart) errs.eveningEnd = "End must be after start";
+    else if (eEnd - eStart < 60) errs.eveningEnd = "Evening block must be at least 1 hour";
+
+    if (!errs.morningEnd && !errs.eveningStart) {
+      if (eStart <= mEnd) errs.eveningStart = "Evening must start after morning ends";
+      else if (eStart - mEnd < 240) errs.eveningStart = "At least 4 hours gap required between morning end and evening start";
+    }
+
     return errs;
   };
 
-  const doSaveAll = async () => {
+  const validateForm = () => {
+    const lettersOnly = /^[a-zA-Z]+$/;
     if (!tempFirstName.trim() || tempFirstName.trim().length < 2) { showToast("First name must be at least 2 characters", "error"); return false; }
     if (tempFirstName.trim().length > 20) { showToast("First name cannot exceed 20 characters", "error"); return false; }
+    if (!lettersOnly.test(tempFirstName.trim())) { showToast("First name can only contain letters", "error"); return false; }
     if (tempLastName.trim() && tempLastName.trim().length < 2) { showToast("Last name must be at least 2 characters", "error"); return false; }
     if (tempLastName.trim().length > 20) { showToast("Last name cannot exceed 20 characters", "error"); return false; }
+    if (tempLastName.trim() && !lettersOnly.test(tempLastName.trim())) { showToast("Last name can only contain letters", "error"); return false; }
     const errs = validateRhythm(tempRhythm);
     if (Object.keys(errs).length > 0) { setRhythmErrors(errs); return false; }
+    return true;
+  };
+
+  const doSaveAll = async () => {
+    if (!validateForm()) return false;
 
     try {
       const nameChanged = tempFirstName.trim() !== firstName || tempLastName.trim() !== lastName;
@@ -192,8 +203,7 @@ function Settings() {
         await updateUserAPI(payload);
         setFirstName(tempFirstName.trim());
         setLastName(tempLastName.trim());
-        setLocalStorageItem("first_name", tempFirstName.trim());
-        setLocalStorageItem("last_name", tempLastName.trim());
+        updateUser({ firstName: tempFirstName.trim(), lastName: tempLastName.trim() });
       }
       const rhythmChanged =
         tempRhythm.morningStart !== rhythm.morningStart ||
@@ -216,12 +226,7 @@ function Settings() {
   };
 
   const requestSaveAll = () => {
-    if (!tempFirstName.trim() || tempFirstName.trim().length < 2) { showToast("First name must be at least 2 characters", "error"); return; }
-    if (tempFirstName.trim().length > 20) { showToast("First name cannot exceed 20 characters", "error"); return; }
-    if (tempLastName.trim() && tempLastName.trim().length < 2) { showToast("Last name must be at least 2 characters", "error"); return; }
-    if (tempLastName.trim().length > 20) { showToast("Last name cannot exceed 20 characters", "error"); return; }
-    const errs = validateRhythm(tempRhythm);
-    if (Object.keys(errs).length > 0) { setRhythmErrors(errs); return; }
+    if (!validateForm()) return;
     setConfirmModal({
       title: "Save Changes?",
       message: "Update your profile and daily rhythm settings?",
@@ -244,7 +249,7 @@ function Settings() {
           const url = photoData?.profile_pic_url;
           if (url) {
             setPhotoUrl(url);
-            setLocalStorageItem("photo_url", url);
+            updateUser({ photoUrl: url });
           } else {
             setPhotoUrl(preview);
           }
@@ -255,20 +260,6 @@ function Settings() {
     e.target.value = "";
   };
 
-  // const handleRemovePhoto = () => {
-  //   setConfirmModal({
-  //     title: "Remove Profile Picture?",
-  //     message: "Your profile picture will be removed.",
-  //     onConfirm: async () => {
-  //       setConfirmModal(null);
-  //       // 1. Clear state immediately so the avatar on THIS page disappears
-  //       setPhotoUrl(null);
-  //       // 2. Remove from localStorage AND fire storage event so Sidebar re-reads immediately
-  //       removeLocalStorageItem("photo_url");
-  //       showToast("Profile picture removed", "success");
-  //     }
-  //   });
-  // };
   const handleRemovePhoto = () => {
   setConfirmModal({
     title: "Remove Profile Picture?",
@@ -278,7 +269,7 @@ function Settings() {
       try {
         await removePhotoAPI();
         setPhotoUrl(null);
-        removeLocalStorageItem("photo_url");
+        updateUser({ photoUrl: null });
         showToast("Profile picture removed", "success");
       } catch (err) {
         showToast(err.message || "Failed to remove", "error");
@@ -429,7 +420,7 @@ function Settings() {
                     <p className="text-sm font-medium text-gray-700">
                       {[firstName, lastName].filter(Boolean).join(" ") || "Your Name"}
                     </p>
-                    <p className="text-xs text-gray-400">{localStorage.getItem("user_email") || ""}</p>
+                    <p className="text-xs text-gray-400">{user.email}</p>
                     <div className="flex gap-2 mt-1">
                       {photoUrl ? (
                         <>

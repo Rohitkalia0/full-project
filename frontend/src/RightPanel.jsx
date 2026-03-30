@@ -109,7 +109,7 @@ function StatBox({ label, value, loading, accent }) {
 }
 
 // ── Main RightPanel ─────────────────────────────────────────────────────────────
-function RightPanel() {
+function RightPanel({ onCalendarData } = {}) {
   const today = getLocalToday();
   const [loading, setLoading] = useState(true);
 
@@ -177,12 +177,21 @@ function RightPanel() {
       });
       setWeekData(wData);
 
+      // Share calendar data with parent (Dashboard's ActivityCalendar)
+      if (onCalendarData) {
+        const completedMap = {};
+        for (const [date, entry] of Object.entries(calMap)) {
+          if (entry.hasData) completedMap[date] = entry.completed;
+        }
+        onCalendarData(completedMap, false);
+      }
+
     } catch (err) {
       console.error("RightPanel load failed:", err);
     } finally {
       setLoading(false);
     }
-  }, [today]);
+  }, [today, onCalendarData]);
 
   useEffect(() => {
     loadData();

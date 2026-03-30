@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { createMorningAPI, updateMorningAPI, addActivityAPI, deleteActivityAPI, getMorningAPI } from "./api";
 import Sidebar from "./Sidebar";
+import { notifyActivityUpdated } from "./RightPanel";
 
 const StarIcon = ({ filled }) => (<svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>);
 const ShieldIcon = ({ filled }) => (<svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>);
@@ -114,11 +115,14 @@ function MorningCheckin() {
 
   const showToast = (message, type = "success") => setToast({ message, type });
 
-  // Has changes = confidence changed OR activities list differs from saved (compare trimmed text)
-  const hasChanges = confidence !== savedConfidence ||
-    activities.length !== savedActivities.length ||
-    JSON.stringify(activities.map(a => ({ text: a.text.trim(), done: a.done, priority: a.priority, protect: a.protect }))) !==
-    JSON.stringify(savedActivities.map(a => ({ text: a.text.trim(), done: a.done, priority: a.priority, protect: a.protect })));
+  const hasChanges = useMemo(() => {
+    if (confidence !== savedConfidence) return true;
+    if (activities.length !== savedActivities.length) return true;
+    return activities.some((a, i) => {
+      const s = savedActivities[i];
+      return !s || a.text.trim() !== s.text.trim() || a.done !== s.done || a.priority !== s.priority || a.protect !== s.protect;
+    });
+  }, [confidence, savedConfidence, activities, savedActivities]);
 
   useEffect(() => { confidenceRef.current = confidence; }, [confidence]);
   useEffect(() => { loadMorning(); }, []);
@@ -151,34 +155,30 @@ function MorningCheckin() {
   };
 
   const loadMorning = async () => {
+    const today = getLocalToday();
+    const cacheKey = `morning_${today}`;
+
+    // Skip GET if we already confirmed no checkin exists for today
+    if (sessionStorage.getItem(cacheKey) === "none") {
+      setPageReady(true);
+      return;
+    }
+
     try {
-      const today = getLocalToday();
       const res = await getMorningAPI(today);
       const data = parseMorningData(res);
-      if (data) applyMorningData(data, today);
+      if (data) {
+        applyMorningData(data, today);
+        sessionStorage.setItem(cacheKey, data.id);
+      }
     } catch (err) {
       console.log("loadMorning — no checkin yet:", err.message);
       checkinIdRef.current = null;
+      sessionStorage.setItem(cacheKey, "none");
     } finally { setPageReady(true); }
   };
 
-  const ensureCheckinId = async () => {
-    if (checkinIdRef.current) return checkinIdRef.current;
-    // Check if today's morning already exists (e.g. created in a prior session)
-    const today = getLocalToday();
-    try {
-      const res = await getMorningAPI(today);
-      const data = parseMorningData(res);
-      if (data?.id) {
-        const dataDate = String(data.date ?? "").split("T")[0];
-        if (dataDate === today) {
-          checkinIdRef.current = data.id;
-          return data.id;
-        }
-      }
-    } catch { /* no morning yet */ }
-    return null;
-  };
+  const ensureCheckinId = () => checkinIdRef.current;
 
   // Add activity locally only — no API call yet
   const addActivity = () => {
@@ -226,7 +226,7 @@ function MorningCheckin() {
     if (!hasChanges) return true;
     setLoading(true);
     try {
-      const id = await ensureCheckinId();
+      const id = ensureCheckinId();
 
       if (!id) {
         // FIRST TIME: Create morning with all activities in one POST
@@ -239,6 +239,7 @@ function MorningCheckin() {
         const data = parseMorningData(res);
         if (!data?.id) throw new Error("Failed to create morning");
         checkinIdRef.current = data.id;
+        sessionStorage.setItem(`morning_${getLocalToday()}`, data.id);
 
         // Sync local state from the POST response directly
         const returned = data.activities || [];
@@ -298,6 +299,7 @@ function MorningCheckin() {
         setSavedConfidence(confidence);
       }
 
+      notifyActivityUpdated();
       showToast("Saved!", "success");
       return true;
     } catch (err) {
@@ -414,7 +416,7 @@ function MorningCheckin() {
                     placeholder="Add a new activity..."
                     maxLength={2000}
                     rows={1}
-                    style={{ resize: "none", overflow: "hidden", fieldSizing: "content" }}
+                    style={{ resize: "none", overflow: "hidden", overflowWrap: "break-word" }}
                     onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                     className={`w-full border rounded-xl px-3.5 py-2.5 text-sm text-gray-700 placeholder-gray-300 outline-none transition min-h-[40px] ${newActivityError ? "border-red-300 bg-red-50 focus:border-red-400" : "bg-gray-50 border-gray-200 focus:border-blue-300 focus:bg-white"}`}
                   />
@@ -429,7 +431,7 @@ function MorningCheckin() {
               <div className="flex flex-col gap-2">
                 {activities.map((a) => (
                   <div key={a.id} className={`flex items-center justify-between px-3.5 py-3 rounded-xl border transition-all ${a.done ? "bg-gray-50 border-gray-100" : a.isCarriedOver ? "bg-amber-50 border-amber-100" : a.isNew ? "bg-blue-50 border-blue-100" : "bg-white border-gray-200"}`}>
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="flex items-start gap-3 flex-1 min-w-0 overflow-hidden">
                       <button onClick={() => toggleDone(a.id)}
                         className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${a.done ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 hover:border-blue-400"}`}>
                         {a.done && <CheckIcon />}
@@ -439,11 +441,11 @@ function MorningCheckin() {
                           ref={(el) => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                           onBlur={() => saveEdit(a.id)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(a.id); } }}
                           rows={1}
-                          style={{ resize: "none", overflow: "hidden" }}
+                          style={{ resize: "none", overflow: "hidden", overflowWrap: "break-word" }}
                           onInput={(e) => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                           className="flex-1 text-sm bg-white border border-blue-300 rounded-lg px-2 py-1 outline-none text-gray-700 min-h-[28px]" />
                       ) : (
-                        <span className={`text-sm break-words whitespace-pre-wrap ${a.done ? "line-through text-gray-400" : "text-gray-700"}`}>
+                        <span className={`text-sm break-all min-w-0 flex-1 ${a.done ? "line-through text-gray-400" : "text-gray-700"}`}>
                           <TruncatedText text={a.text} className="" isExpanded={expandedActivityId === a.id} onToggle={() => setExpandedActivityId(prev => prev === a.id ? null : a.id)} />
                           {a.isCarriedOver && <span className="ml-2 text-[10px] text-amber-500 font-medium">carried over</span>}
                           {a.isNew && <span className="ml-2 text-[10px] text-blue-500 font-medium">unsaved</span>}

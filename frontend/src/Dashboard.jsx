@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { getMorningAPI, getEveningAPI, getSkillsAPI, getUserAPI } from "./api";
+import { getMorningAPI, getEveningAPI, getSkillsAPI } from "./api";
 import Sidebar from "./Sidebar";
-import RightPanel, { getLocalToday, getLast30Days } from "./RightPanel";
+import RightPanel, { getLocalToday } from "./RightPanel";
+import { useUser } from "./UserContext";
 
 // ── Activity Calendar ─────────────────────────────────────────────────────────
 function ActivityCalendar({ calendarData, loading }) {
@@ -180,7 +181,7 @@ function SummaryCard({ title, status, progress, icon, color, onClick }) {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function Dashboard() {
   const navigate = useNavigate();
-  const [firstName, setFirstName] = useState(localStorage.getItem("first_name") || "");
+  const { user } = useUser();
   const [loading, setLoading] = useState(true);
   const [calLoading, setCalLoading] = useState(true);
 
@@ -194,29 +195,20 @@ function Dashboard() {
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const [morningRes, eveningRes, skillsRes, userRes] = await Promise.allSettled([
+      const [morningRes, eveningRes, skillsRes] = await Promise.allSettled([
         getMorningAPI(today),
         getEveningAPI(today),
         getSkillsAPI(),
-        getUserAPI(),
       ]);
 
       const morning = morningRes.status === "fulfilled" ? (morningRes.value?.data ?? morningRes.value) : null;
       const evening = eveningRes.status === "fulfilled" ? (eveningRes.value?.data ?? eveningRes.value) : null;
       const skillsRaw = skillsRes.status === "fulfilled"
         ? (skillsRes.value?.data?.skills || skillsRes.value?.skills || []) : [];
-      const user = userRes.status === "fulfilled" ? (userRes.value?.data ?? userRes.value) : null;
 
       setMorningData(morning?.id ? morning : null);
       setEveningData(evening?.id ? evening : null);
       setSkillsData(skillsRaw);
-
-      if (user?.first_name) {
-        setFirstName(user.first_name);
-        localStorage.setItem("first_name", user.first_name);
-        if (user.last_name) localStorage.setItem("last_name", user.last_name);
-        if (user.profile_pic_url) localStorage.setItem("photo_url", user.profile_pic_url);
-      }
     } catch (err) {
       console.error("Dashboard load failed:", err);
     } finally {
@@ -224,41 +216,12 @@ function Dashboard() {
     }
   }, [today]);
 
-  const loadCalendar = useCallback(async () => {
-    setCalLoading(true);
-    try {
-      const last30 = getLast30Days();
-      const results = await Promise.allSettled(last30.map(d => getMorningAPI(d)));
-      const calMap = {};
-      results.forEach((r, i) => {
-        const date = last30[i];
-        if (r.status === "fulfilled") {
-          const data = r.value?.data ?? r.value;
-          if (data?.id) {
-            calMap[date] = (data.activities || []).filter(a => a.is_completed).length;
-          }
-        }
-      });
-      setCalendarData(calMap);
-    } catch (err) {
-      console.error("Calendar load failed:", err);
-    } finally {
-      setCalLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     loadDashboard();
-    loadCalendar();
-
-    // Real-time: re-fetch when any activity is updated elsewhere
-    const handleUpdate = () => {
-      loadDashboard();
-      loadCalendar();
-    };
+    const handleUpdate = () => { loadDashboard(); };
     window.addEventListener("activityUpdated", handleUpdate);
     return () => window.removeEventListener("activityUpdated", handleUpdate);
-  }, [loadDashboard, loadCalendar]);
+  }, [loadDashboard]);
 
   // ── derived stats ─────────────────────────────────────────────────────────
   const totalActivities = morningData?.activities?.length || 0;
@@ -289,7 +252,7 @@ function Dashboard() {
         {/* Header */}
         <div>
           <p className="text-sm text-gray-400">
-            Hello <span className="font-bold text-blue-600">{firstName || "there"}</span>, welcome back!
+            Hello <span className="font-bold text-blue-600">{user.firstName || "there"}</span>, welcome back!
           </p>
           <h1 className="text-2xl font-bold text-gray-800 mt-0.5">{formattedDate}</h1>
         </div>
@@ -339,7 +302,7 @@ function Dashboard() {
       </main>
 
       {/* Right Panel */}
-      <RightPanel />
+      <RightPanel onCalendarData={(data, isLoading) => { setCalendarData(data); setCalLoading(isLoading); }} />
     </div>
   );
 }

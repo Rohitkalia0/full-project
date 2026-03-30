@@ -1,6 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { signupAPI } from "./api";
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
 
 function Toast({ message, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
@@ -16,19 +19,37 @@ function Toast({ message, type, onClose }) {
   );
 }
 
+const EyeOpen = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+  </svg>
+);
+
+const EyeClosed = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a9.956 9.956 0 012.223-3.592M6.53 6.533A9.956 9.956 0 0112 5c4.477 0 8.268 2.943 9.542 7a9.973 9.973 0 01-4.073 5.267M15 12a3 3 0 01-3 3m0 0a3 3 0 01-2.83-2M3 3l18 18" />
+  </svg>
+);
+
 function Signup() {
   const navigate = useNavigate();
+  const mountedRef = useRef(true);
   const [formData, setFormData] = useState({ email: "", password: "", confirm_password: "" });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({ email: false, password: false, confirm_password: false });
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const emailValid = emailRegex.test(formData.email);
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
-  const passwordValid = passwordRegex.test(formData.password);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  const emailValid = EMAIL_REGEX.test(formData.email);
+  const passwordValid = PASSWORD_REGEX.test(formData.password);
   const confirmValid = formData.confirm_password.length > 0 && formData.confirm_password === formData.password;
   const confirmMismatch = formData.confirm_password.length > 0 && formData.confirm_password !== formData.password;
 
@@ -39,51 +60,58 @@ function Signup() {
     if (field === "confirm_password") {
       if (confirmValid) return "border-green-400 focus:border-green-500";
       if (confirmMismatch) return "border-red-400 focus:border-red-500";
-      return "border-gray-200 focus:border-blue-400";
     }
     return "border-gray-200 focus:border-blue-400";
   };
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-    setTouched({ ...touched, [e.target.name]: true });
-    setErrors({ ...errors, [e.target.name]: "" });
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    setTouched(prev => ({ ...prev, [name]: true }));
+    setErrors(prev => ({ ...prev, [name]: "" }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setTouched({ email: true, password: true, confirm_password: true });
-    let newErrors = {};
+
+    const newErrors = {};
     if (!formData.email) newErrors.email = "Email is required";
     else if (!emailValid) newErrors.email = "Enter a valid email";
     if (!formData.password) newErrors.password = "Password is required";
-    else if (!passwordRegex.test(formData.password)) newErrors.password = "Password must be 8+ chars with uppercase, lowercase, number, and special character (@$!%*?&)";
+    else if (!passwordValid) newErrors.password = "Must be 8+ chars with uppercase, lowercase, number, and special character (@$!%*?&)";
     if (!formData.confirm_password) newErrors.confirm_password = "Please confirm your password";
     else if (formData.password !== formData.confirm_password) newErrors.confirm_password = "Passwords do not match";
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+
     setSubmitting(true);
-    try {
+    const doSignup = async () => {
       const res = await signupAPI({ email: formData.email, password: formData.password });
+      if (!mountedRef.current) return;
       setToast({ message: res.message || "Account created! Please log in.", type: "success" });
-      setTimeout(() => navigate("/login"), 2000);
+      setTimeout(() => { if (mountedRef.current) navigate("/login"); }, 2000);
+    };
+    try {
+      await doSignup();
     } catch (err) {
-      setErrors({ email: err.message });
+      if (!mountedRef.current) return;
+      if (err instanceof TypeError) {
+        setRetrying(true);
+        try {
+          await new Promise(r => setTimeout(r, 3000));
+          await doSignup();
+        } catch (retryErr) {
+          if (mountedRef.current) setErrors({ email: retryErr instanceof TypeError ? "Could not reach server. Please try again." : retryErr.message });
+        } finally {
+          if (mountedRef.current) setRetrying(false);
+        }
+      } else {
+        setErrors({ email: err.message });
+      }
     } finally {
-      setSubmitting(false);
+      if (mountedRef.current) setSubmitting(false);
     }
   };
-
-  const EyeOpen = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-    </svg>
-  );
-  const EyeClosed = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.477 0-8.268-2.943-9.542-7a9.956 9.956 0 012.223-3.592M6.53 6.533A9.956 9.956 0 0112 5c4.477 0 8.268 2.943 9.542 7a9.973 9.973 0 01-4.073 5.267M15 12a3 3 0 01-3 3m0 0a3 3 0 01-2.83-2M3 3l18 18" />
-    </svg>
-  );
 
   return (
     <div className="flex h-screen font-sans overflow-y-auto" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #f0f9ff 100%)" }}>
@@ -92,7 +120,6 @@ function Signup() {
       <div className="w-full flex justify-center items-center py-10">
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 w-full max-w-md">
 
-          {/* Logo */}
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
               <svg viewBox="0 0 100 100" className="w-6 h-6">
@@ -125,8 +152,6 @@ function Signup() {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  onCopy={(e) => e.preventDefault()}
-                  onCut={(e) => e.preventDefault()}
                   placeholder="Enter your password"
                   className={`w-full p-3 pr-10 rounded-xl bg-gray-50 outline-none border-2 transition-colors text-sm ${getBorderClass("password")}`}
                 />
@@ -146,7 +171,6 @@ function Signup() {
                 name="confirm_password"
                 value={formData.confirm_password}
                 onChange={handleChange}
-                onPaste={(e) => e.preventDefault()}
                 placeholder="Re-enter your password"
                 className={`w-full p-3 rounded-xl bg-gray-50 outline-none border-2 transition-colors text-sm ${getBorderClass("confirm_password")}`}
               />
@@ -155,12 +179,9 @@ function Signup() {
               {errors.confirm_password && <p className="text-red-500 text-xs mt-1">{errors.confirm_password}</p>}
             </div>
 
-            <button type="submit"
-              disabled={submitting}
+            <button type="submit" disabled={submitting}
               className={`w-full p-3 rounded-xl font-medium text-sm transition shadow-sm mt-2 flex items-center justify-center gap-2 ${
-                submitting
-                  ? "bg-blue-400 cursor-not-allowed text-white"
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
+                submitting ? "bg-blue-400 cursor-not-allowed text-white" : "bg-blue-600 hover:bg-blue-700 text-white"
               }`}>
               {submitting && (
                 <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -168,7 +189,7 @@ function Signup() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                 </svg>
               )}
-              {submitting ? "Signing up..." : "Sign Up"}
+              {retrying ? "Server waking up, retrying..." : submitting ? "Signing up..." : "Sign Up"}
             </button>
           </form>
 

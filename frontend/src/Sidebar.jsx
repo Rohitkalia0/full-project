@@ -1,5 +1,6 @@
 import { logout } from "./auth";
 import { useState, useEffect } from "react";
+import { useUser } from "./UserContext";
 
 const LogoutIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -25,27 +26,14 @@ function LogoutModal({ onConfirm, onCancel }) {
 
 function Sidebar({ activePath, onNavigate }) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [photoUrl, setPhotoUrl] = useState(null);
+  const { user, fetchUser, loaded } = useUser();
 
   useEffect(() => {
-    const readLocal = () => {
-      setFirstName(localStorage.getItem("first_name") || "");
-      setLastName(localStorage.getItem("last_name") || "");
-      setEmail(localStorage.getItem("user_email") || "");
-      setPhotoUrl(localStorage.getItem("photo_url") || null);
-    };
-    readLocal();
+    if (!loaded) fetchUser();
+  }, [loaded, fetchUser]);
 
-    // Listen for storage changes from Settings page or other mutations
-    window.addEventListener("storage", readLocal);
-    return () => window.removeEventListener("storage", readLocal);
-  }, [activePath]);
-
-  const fullName = [firstName, lastName].filter(Boolean).join(" ") || "Your Name";
-  const initials = [firstName?.[0], lastName?.[0]].filter(Boolean).join("").toUpperCase() || "U";
+  const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ") || "Your Name";
+  const initials = [user.firstName?.[0], user.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "U";
 
   const handleNav = (path) => {
     if (onNavigate) onNavigate(path);
@@ -99,8 +87,8 @@ function Sidebar({ activePath, onNavigate }) {
             }`}
           >
             <div className="w-9 h-9 rounded-full overflow-hidden shrink-0 border-2 border-gray-100 shadow-sm flex items-center justify-center bg-blue-100">
-              {photoUrl
-                ? <img src={photoUrl} alt="avatar" className="w-full h-full object-cover" />
+              {user.photoUrl
+                ? <img src={user.photoUrl} alt="avatar" className="w-full h-full object-cover" />
                 : <span className="text-blue-600 text-xs font-bold">{initials}</span>
               }
             </div>
@@ -109,7 +97,7 @@ function Sidebar({ activePath, onNavigate }) {
                 {fullName}
               </p>
               <p className={`text-[11px] truncate mt-0.5 ${activePath === "/settings" ? "text-blue-500" : "text-gray-400 group-hover:text-gray-500"}`}>
-                {email}
+                {user.email}
               </p>
             </div>
           </button>
